@@ -37,6 +37,7 @@ jobs:
     environment: pypi    # GitHub environment with protection rules (optional but recommended)
 
     permissions:
+      contents: read     # required for actions/checkout
       id-token: write    # required for OIDC trusted publisher auth
 
     steps:
