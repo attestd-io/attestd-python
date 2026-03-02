@@ -6,6 +6,11 @@ on:
     tags:
       - "v*"
 
+# Grant read access to repo contents for all jobs.
+# The publish job additionally needs id-token: write for OIDC.
+permissions:
+  contents: read
+
 jobs:
   # Run the full test matrix before publishing — never ship a broken release.
   test:
