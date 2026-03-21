@@ -2,7 +2,7 @@
 
 Python SDK for the [Attestd](https://attestd.io) security risk API.
 
-Attestd returns vulnerability risk assessments for open-source software components — suitable for CI/CD deployment gates, autonomous agent tool calls, and security dashboards.
+Attestd returns vulnerability risk assessments for open-source software components. Use it in CI/CD deployment gates, autonomous agent tool calls, and security dashboards.
 
 ## Installation
 
@@ -59,10 +59,10 @@ with attestd.Client(api_key="atst_...") as client:
         try:
             result = client.check(product, version)
         except attestd.AttestdUnsupportedProductError:
-            continue  # not in supported list — skip
+            continue  # not in supported list, skip
 
         if result.risk_state in ("critical", "high"):
-            print(f"BLOCK: {product} {version} — {result.risk_state}")
+            print(f"BLOCK: {product} {version} ({result.risk_state})")
             print(f"  CVEs: {', '.join(result.cve_ids)}")
             print(f"  Fix:  upgrade to {result.fixed_version}")
             exit(1)
@@ -106,7 +106,7 @@ with attestd.Client(api_key="atst_...") as client:
         result = client.check("nginx", "1.20.0")
     except attestd.AttestdUnsupportedProductError:
         # Product is outside Attestd's coverage.
-        # This does NOT mean the product is safe — it means Attestd has no data.
+        # This does NOT mean the product is safe. It means Attestd has no data.
         # Make an explicit policy decision: block, warn an operator, or skip.
         # Do not silently allow — see "Outside coverage" below.
         pass
@@ -117,7 +117,7 @@ with attestd.Client(api_key="atst_...") as client:
         # API key is invalid or revoked
         raise
     except attestd.AttestdAPIError as e:
-        # Unexpected server error — e.status_code is 0 for connection failures
+        # Unexpected server error; e.status_code is 0 for connection failures
         print(f"API error: {e.status_code}")
     except attestd.AttestdError:
         # Catch-all for any Attestd SDK exception
@@ -137,16 +137,16 @@ Recommended handling:
 try:
     result = client.check(product, version)
 except attestd.AttestdUnsupportedProductError as e:
-    # Option 1 — block: treat "outside coverage" as unknown risk
+    # Option 1: block - treat "outside coverage" as unknown risk
     raise RuntimeError(
         f"{e.product} is outside Attestd's coverage. "
         "Manual security review required before deploying."
     )
 
-    # Option 2 — warn: proceed but surface the gap
-    logger.warning("Attestd has no coverage for %s — proceeding without check", e.product)
+    # Option 2: warn - proceed but surface the gap
+    logger.warning("Attestd has no coverage for %s, proceeding without check", e.product)
 
-    # Option 3 — skip: exempted product, documented
+    # Option 3: skip - exempted product, documented
     if e.product in EXEMPTED_PRODUCTS:
         return  # explicitly opted out of coverage check for this product
 ```
@@ -206,13 +206,14 @@ surfaced immediately without retry.
 ## Supported products
 
 See [attestd.io/docs/products](https://attestd.io/docs/products) for the
-current list of supported products. Querying an unsupported product raises
-`AttestdUnsupportedProductError` — this is not an error in your code.
+full list of supported products. Each product page documents the exact API
+slug, version format, and notable CVEs. Querying an unsupported product
+raises `AttestdUnsupportedProductError`. This is not an error in your code.
 
 ## Testing your integration
 
 The SDK ships a `attestd.testing` module with httpx transports for injecting
-controlled API responses into your tests — no local Attestd instance required.
+controlled API responses into your tests. No local Attestd instance required.
 
 ```python
 import attestd
@@ -250,8 +251,8 @@ from attestd.testing import SequentialMockTransport, NGINX_SAFE
 
 def test_retry_succeeds_on_second_attempt():
     transport = SequentialMockTransport([
-        (503, {}),         # first attempt — server error
-        (200, NGINX_SAFE), # second attempt — success
+        (503, {}),         # first attempt, server error
+        (200, NGINX_SAFE), # second attempt, success
     ])
     client = attestd.Client(api_key="test", transport=transport, max_retries=1)
     result = client.check("nginx", "1.27.4")

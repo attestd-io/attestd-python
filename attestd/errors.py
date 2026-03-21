@@ -66,6 +66,7 @@ class AttestdUnsupportedProductError(AttestdError):
         the exemption.
 
     See https://attestd.io/docs/products for the supported product list.
+    Each product page lists the exact slug, version format, and notable CVEs.
 
     Attributes:
         product: The product slug that was queried.
