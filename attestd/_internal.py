@@ -17,7 +17,7 @@ from attestd.errors import (
     AttestdRateLimitError,
     AttestdUnsupportedProductError,
 )
-from attestd.models import RiskResult
+from attestd.models import RiskResult, SupplyChainSignal
 
 # HTTP status codes that indicate a transient server error worth retrying.
 _RETRY_STATUS_CODES: frozenset[int] = frozenset({500, 502, 503, 504})
@@ -32,6 +32,15 @@ _RETRYABLE_EXCEPTIONS = (
 DEFAULT_BASE_URL = "https://api.attestd.io"
 CHECK_PATH = "/v1/check"
 USER_AGENT = f"attestd-python/{__version__}"
+
+
+def _parse_optional_iso(dt_raw: str | None) -> datetime | None:
+    if not dt_raw:
+        return None
+    dt = datetime.fromisoformat(dt_raw)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def make_headers(api_key: str) -> dict[str, str]:
@@ -102,6 +111,19 @@ def parse_check_response(
     else:
         last_updated = datetime.now(tz=timezone.utc)
 
+    supply_chain: SupplyChainSignal | None = None
+    raw_sc = data.get("supply_chain")
+    if raw_sc is not None:
+        supply_chain = SupplyChainSignal(
+            compromised=raw_sc["compromised"],
+            sources=tuple(raw_sc.get("sources") or []),
+            malware_type=raw_sc.get("malware_type"),
+            description=raw_sc.get("description"),
+            advisory_url=raw_sc.get("advisory_url"),
+            compromised_at=_parse_optional_iso(raw_sc.get("compromised_at")),
+            removed_at=_parse_optional_iso(raw_sc.get("removed_at")),
+        )
+
     return RiskResult(
         product=data["product"],
         version=data["version"],
@@ -115,4 +137,5 @@ def parse_check_response(
         confidence=float(data["confidence"]),
         cve_ids=data.get("cve_ids") or [],
         last_updated=last_updated,
+        supply_chain=supply_chain,
     )

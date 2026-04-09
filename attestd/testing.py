@@ -117,6 +117,50 @@ LOG4J_CRITICAL: dict[str, Any] = {
 #: Response body for a product outside Attestd's coverage (supported=False).
 UNSUPPORTED: dict[str, Any] = {"supported": False}
 
+#: Monitored PyPI package — supply chain clean (compromised=false).
+LITELLM_SAFE: dict[str, Any] = {
+    "product": "litellm",
+    "version": "1.82.6",
+    "supported": True,
+    "risk_state": "none",
+    "risk_factors": [],
+    "actively_exploited": False,
+    "remote_exploitable": False,
+    "authentication_required": False,
+    "patch_available": False,
+    "fixed_version": None,
+    "confidence": 0.9,
+    "cve_ids": [],
+    "last_updated": "2026-03-24T12:00:00+00:00",
+    "supply_chain": {"compromised": False, "sources": []},
+}
+
+#: Monitored PyPI package — compromised version flagged by multiple sources.
+LITELLM_COMPROMISED: dict[str, Any] = {
+    "product": "litellm",
+    "version": "1.82.7",
+    "supported": True,
+    "risk_state": "none",
+    "risk_factors": [],
+    "actively_exploited": False,
+    "remote_exploitable": False,
+    "authentication_required": False,
+    "patch_available": False,
+    "fixed_version": None,
+    "confidence": 1.0,
+    "cve_ids": [],
+    "last_updated": "2026-03-24T12:00:00+00:00",
+    "supply_chain": {
+        "compromised": True,
+        "sources": ["osv", "registry"],
+        "malware_type": "backdoor",
+        "description": "TeamPCP supply chain attack",
+        "advisory_url": "https://docs.litellm.ai/blog/security-update-march-2026",
+        "compromised_at": "2026-03-24T10:39:00+00:00",
+        "removed_at": "2026-03-24T16:00:00+00:00",
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Transport implementations

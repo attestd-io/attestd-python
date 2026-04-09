@@ -48,6 +48,17 @@ async def test_check_critical_state():
     assert "CVE-2021-44228" in result.cve_ids
 
 
+async def test_supply_chain_signal_parsed():
+    from attestd.testing import LITELLM_COMPROMISED, MockAsyncTransport
+
+    transport = MockAsyncTransport(200, LITELLM_COMPROMISED)
+    async with AsyncClient(api_key="atst_test", transport=transport) as client:
+        result = await client.check("litellm", "1.82.7")
+    assert result.supply_chain is not None
+    assert result.supply_chain.compromised is True
+    assert "registry" in result.supply_chain.sources
+
+
 # ---------------------------------------------------------------------------
 # Unsupported product
 # ---------------------------------------------------------------------------

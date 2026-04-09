@@ -27,6 +27,23 @@ RiskFactor = Literal[
 
 
 @dataclass(frozen=True, slots=True)
+class SupplyChainSignal:
+    """
+    PyPI supply chain assessment for monitored packages (independent of CVE risk_state).
+
+    Present when the product has supply-chain monitoring; see API docs for null semantics.
+    """
+
+    compromised: bool
+    sources: tuple[str, ...] = ()
+    malware_type: str | None = None
+    description: str | None = None
+    advisory_url: str | None = None
+    compromised_at: datetime | None = None
+    removed_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class RiskResult:
     """
     Security risk assessment for a specific product version.
@@ -50,6 +67,7 @@ class RiskResult:
                                Values < 0.7 indicate LLM fallback to DB-derived fields.
         cve_ids:               CVE IDs contributing to this assessment.
         last_updated:          UTC timestamp of the most recent synthesis run.
+        supply_chain:          PyPI supply chain signal when monitored; None if CVE-only product.
     """
 
     product: str
@@ -64,3 +82,4 @@ class RiskResult:
     confidence: float
     cve_ids: list[str] = field(default_factory=list)
     last_updated: datetime = field(default_factory=lambda: datetime.min)
+    supply_chain: SupplyChainSignal | None = None

@@ -79,6 +79,20 @@ def test_check_risk_factors_empty_for_none_state():
     assert result.risk_factors == []
 
 
+def test_supply_chain_signal_parsed():
+    from attestd.testing import LITELLM_COMPROMISED, MockTransport
+
+    client = Client(
+        api_key="atst_test",
+        transport=MockTransport(200, LITELLM_COMPROMISED),
+    )
+    result = client.check("litellm", "1.82.7")
+    assert result.supply_chain is not None
+    assert result.supply_chain.compromised is True
+    assert "registry" in result.supply_chain.sources
+    assert result.supply_chain.malware_type == "backdoor"
+
+
 # ---------------------------------------------------------------------------
 # Unsupported product
 # ---------------------------------------------------------------------------
@@ -214,6 +228,7 @@ def test_top_level_exports():
     assert hasattr(attestd, "Client")
     assert hasattr(attestd, "AsyncClient")
     assert hasattr(attestd, "RiskResult")
+    assert hasattr(attestd, "SupplyChainSignal")
     assert hasattr(attestd, "AttestdError")
     assert hasattr(attestd, "AttestdAuthError")
     assert hasattr(attestd, "AttestdRateLimitError")
