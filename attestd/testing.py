@@ -6,11 +6,11 @@ real network calls. Inject them via the ``transport`` parameter on
 :class:`~attestd.Client` or :class:`~attestd.AsyncClient`.
 
 The primary use case is testing the security branching logic in your own
-code — the paths that handle ``critical`` vs ``high`` risk states, the
-``AttestdUnsupportedProductError`` policy, retry behaviour, etc. — against
+code. Test the paths that handle ``critical`` vs ``high`` risk states, the
+``AttestdUnsupportedProductError`` policy, retry behaviour, etc. against
 controlled, reproducible API responses.
 
-Example — testing a deployment gate::
+Example: testing a deployment gate.
 
     from attestd.testing import MockTransport, NGINX_VULNERABLE
 
@@ -21,7 +21,7 @@ Example — testing a deployment gate::
         with pytest.raises(SystemExit):
             run_deployment_gate(client, "nginx", "1.20.0")
 
-Example — testing retry handling in an async agent tool::
+Example: testing retry handling in an async agent tool.
 
     from attestd.testing import SequentialMockAsyncTransport
 
@@ -34,7 +34,7 @@ Example — testing retry handling in an async agent tool::
         result = await my_agent_tool(client, "nginx", "1.27.4")
         assert result["risk_state"] == "none"
 
-Example — testing the "outside coverage" policy branch::
+Example: testing the "outside coverage" policy branch.
 
     from attestd.testing import MockTransport, UNSUPPORTED
 
@@ -117,7 +117,7 @@ LOG4J_CRITICAL: dict[str, Any] = {
 #: Response body for a product outside Attestd's coverage (supported=False).
 UNSUPPORTED: dict[str, Any] = {"supported": False}
 
-#: Monitored PyPI package — supply chain clean (compromised=false).
+#: Monitored PyPI package. Supply chain clean (compromised=false).
 LITELLM_SAFE: dict[str, Any] = {
     "product": "litellm",
     "version": "1.82.6",
@@ -135,7 +135,7 @@ LITELLM_SAFE: dict[str, Any] = {
     "supply_chain": {"compromised": False, "sources": []},
 }
 
-#: Monitored PyPI package — compromised version flagged by multiple sources.
+#: Monitored PyPI package. Compromised version flagged by multiple sources.
 LITELLM_COMPROMISED: dict[str, Any] = {
     "product": "litellm",
     "version": "1.82.7",
@@ -239,7 +239,7 @@ class SequentialMockTransport(httpx.BaseTransport):
         if self._idx >= len(self._responses):
             raise AssertionError(
                 f"SequentialMockTransport exhausted after {len(self._responses)} "
-                f"responses — got an unexpected extra request to {request.url}"
+                f"responses. Got an unexpected extra request to {request.url}"
             )
         entry = self._responses[self._idx]
         self._idx += 1

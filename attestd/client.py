@@ -4,7 +4,7 @@ Attestd sync and async API clients.
 Both clients share the same retry strategy: up to max_retries additional
 attempts on transient 5xx responses or connection failures, with exponential
 backoff (1s, 2s, 4s between attempts). 401 and 429 are surfaced immediately
-without retry — these require deliberate action from the caller.
+without retry. These require deliberate action from the caller.
 
 Usage (sync)::
 
@@ -57,7 +57,7 @@ class Client:
         timeout:     Per-request timeout in seconds. Default: 10.
         max_retries: Maximum number of retries on transient errors. Default: 3.
                      Retry 0 means one attempt total with no retries.
-        transport:   Custom httpx transport — inject a mock for unit testing.
+        transport:   Custom httpx transport. Inject a mock for unit testing.
     """
 
     def __init__(
@@ -94,7 +94,7 @@ class Client:
 
         Raises:
             AttestdUnsupportedProductError: Product not in the supported list.
-                Treat as a safe unknown — not a caller error.
+                Treat as a safe unknown. It is not a caller error.
             AttestdAuthError:               API key is invalid or revoked.
             AttestdRateLimitError:          Monthly call quota exceeded.
                 Check e.retry_after for seconds to wait before retrying.
@@ -154,7 +154,7 @@ class AsyncClient:
         base_url:    API base URL. Defaults to https://api.attestd.io.
         timeout:     Per-request timeout in seconds. Default: 10.
         max_retries: Maximum number of retries on transient errors. Default: 3.
-        transport:   Custom async httpx transport — inject a mock for unit testing.
+        transport:   Custom async httpx transport. Inject a mock for unit testing.
     """
 
     def __init__(
@@ -190,7 +190,7 @@ class AsyncClient:
 
         Raises:
             AttestdUnsupportedProductError, AttestdAuthError,
-            AttestdRateLimitError, AttestdAPIError — see Client.check().
+            AttestdRateLimitError, AttestdAPIError. See Client.check().
         """
         response = await self._send_with_retry(product, version)
         return parse_check_response(response, product, version)

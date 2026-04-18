@@ -1,7 +1,7 @@
 """
 Internal helpers shared by Client and AsyncClient.
 
-Not part of the public API — may change without notice.
+Not part of the public API. May change without notice.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ def parse_check_response(
     if response.status_code >= 500:
         raise AttestdAPIError(
             f"Attestd API error (HTTP {response.status_code}). "
-            "The service may be temporarily unavailable — try again shortly.",
+            "The service may be temporarily unavailable. Try again shortly.",
             status_code=response.status_code,
         )
 
@@ -98,7 +98,7 @@ def parse_check_response(
     data = response.json()
 
     if not data.get("supported", True):
-        # "Outside coverage" — not a safety clearance. See AttestdUnsupportedProductError.
+        # "Outside coverage" is not a safety clearance. See AttestdUnsupportedProductError.
         raise AttestdUnsupportedProductError(product, version)
 
     # last_updated arrives as an ISO 8601 string.

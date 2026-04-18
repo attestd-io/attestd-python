@@ -34,11 +34,11 @@ Error handling::
     try:
         result = client.check("myproduct", "1.0.0")
     except attestd.AttestdUnsupportedProductError:
-        pass  # outside coverage — make an explicit policy decision (block/warn/skip)
+        pass  # outside coverage: make an explicit policy decision (block/warn/skip)
     except attestd.AttestdRateLimitError as e:
         time.sleep(e.retry_after or 60)
     except attestd.AttestdAuthError:
-        raise  # key is invalid — surface to operator
+        raise  # key is invalid: surface to operator
     except attestd.AttestdError:
         pass  # transient API/network error
 

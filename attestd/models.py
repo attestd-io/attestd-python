@@ -2,7 +2,7 @@
 Attestd response models.
 
 RiskResult is the return type of Client.check() and AsyncClient.check().
-It is a frozen dataclass — all fields are set at construction and cannot
+It is a frozen dataclass. All fields are set at construction and cannot
 be modified. This makes it safe to cache and pass between threads.
 """
 

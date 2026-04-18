@@ -108,7 +108,7 @@ with attestd.Client(api_key="atst_...") as client:
         # Product is outside Attestd's coverage.
         # This does NOT mean the product is safe. It means Attestd has no data.
         # Make an explicit policy decision: block, warn an operator, or skip.
-        # Do not silently allow — see "Outside coverage" below.
+        # Do not silently allow. See "Outside coverage" below.
         pass
     except attestd.AttestdRateLimitError as e:
         # Monthly quota exceeded
@@ -124,7 +124,7 @@ with attestd.Client(api_key="atst_...") as client:
         pass
 ```
 
-### Outside coverage — not a safety signal
+### Outside coverage: not a safety signal
 
 `AttestdUnsupportedProductError` means **Attestd has no vulnerability data for
 this product**, not that the product is free of vulnerabilities. This distinction
@@ -275,7 +275,7 @@ def test_outside_coverage_is_blocked_not_allowed():
 
 ### Custom response bodies
 
-All ready-made bodies (`NGINX_SAFE`, etc.) are plain dicts — merge in overrides:
+All ready-made bodies (`NGINX_SAFE`, etc.) are plain dicts. Merge in overrides:
 
 ```python
 from attestd.testing import MockTransport, NGINX_VULNERABLE

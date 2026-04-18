@@ -7,7 +7,7 @@ single broad handler when needed:
     try:
         result = client.check("nginx", "1.20.0")
     except attestd.AttestdUnsupportedProductError:
-        ...  # outside coverage — make an explicit policy decision, see below
+        ...  # outside coverage: make an explicit policy decision, see below
     except attestd.AttestdRateLimitError as e:
         time.sleep(e.retry_after or 60)
     except attestd.AttestdError:
@@ -34,7 +34,7 @@ class AttestdRateLimitError(AttestdError):
     """
     Monthly call quota exceeded. HTTP 429.
 
-    The SDK does not auto-retry on 429 — the caller controls the backoff.
+    The SDK does not auto-retry on 429. The caller controls the backoff.
     Check retry_after for the number of seconds to wait, if provided by
     the server.
 
@@ -53,7 +53,7 @@ class AttestdUnsupportedProductError(AttestdError):
     The requested product is outside Attestd's coverage.
 
     This means Attestd has no vulnerability data for this product. It does
-    NOT mean the product is free of vulnerabilities — the absence of data is
+    NOT mean the product is free of vulnerabilities. The absence of data is
     not a safety signal. Do not treat this exception as a security clearance.
 
     The correct response is an explicit policy decision by the caller:
@@ -76,7 +76,7 @@ class AttestdUnsupportedProductError(AttestdError):
     def __init__(self, product: str, version: str) -> None:
         super().__init__(
             f"Product '{product}' is outside Attestd's coverage. "
-            "This does not mean the product is safe — Attestd has no data for it. "
+            "This does not mean the product is safe. Attestd has no data for it. "
             "See https://attestd.io/docs/products for the supported product list."
         )
         self.product: str = product
