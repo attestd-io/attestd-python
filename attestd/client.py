@@ -39,7 +39,7 @@ from attestd._internal import (
     make_headers,
     parse_check_response,
 )
-from attestd.errors import AttestdAPIError
+from attestd.errors import AttestdAPIError, AttestdError
 from attestd.models import RiskResult
 
 
@@ -68,6 +68,11 @@ class Client:
         max_retries: int = 3,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
+        if not api_key or not api_key.strip():
+            raise AttestdError(
+                "api_key is required. "
+                "Obtain a key at https://api.attestd.io/portal/login."
+            )
         self._max_retries = max_retries
         self._http = httpx.Client(
             base_url=base_url,
@@ -165,6 +170,11 @@ class AsyncClient:
         max_retries: int = 3,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        if not api_key or not api_key.strip():
+            raise AttestdError(
+                "api_key is required. "
+                "Obtain a key at https://api.attestd.io/portal/login."
+            )
         self._max_retries = max_retries
         self._http = httpx.AsyncClient(
             base_url=base_url,

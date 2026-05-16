@@ -114,6 +114,11 @@ def parse_check_response(
     supply_chain: SupplyChainSignal | None = None
     raw_sc = data.get("supply_chain")
     if raw_sc is not None:
+        if "compromised" not in raw_sc:
+            raise AttestdAPIError(
+                "Unexpected response shape: supply_chain.compromised is missing.",
+                status_code=200,
+            )
         supply_chain = SupplyChainSignal(
             compromised=raw_sc["compromised"],
             sources=tuple(raw_sc.get("sources") or []),
