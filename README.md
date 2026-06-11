@@ -167,6 +167,7 @@ except attestd.AttestdUnsupportedProductError as e:
 | `confidence` | `float` | Synthesis confidence (0.0–1.0) |
 | `cve_ids` | `list[str]` | CVE IDs in this assessment |
 | `last_updated` | `datetime` | UTC timestamp of last synthesis run |
+| `supply_chain` | `SupplyChainSignal \| None` | PyPI/npm supply chain signal when monitored; `None` for CVE-only products |
 
 ### Risk states
 
@@ -192,11 +193,23 @@ except attestd.AttestdUnsupportedProductError as e:
 
 ```python
 client = attestd.Client(
-    api_key="atst_...",
+    api_key="atst_...",                  # optional if ATTESTD_API_KEY is set
     base_url="https://api.attestd.io",  # override for testing
     timeout=10.0,                        # per-request timeout in seconds
     max_retries=3,                       # retries on 5xx / connection errors
+    retry_delay=1.0,                     # base backoff delay in seconds
 )
+```
+
+Set `ATTESTD_API_KEY` in your environment to omit the `api_key` argument:
+
+```bash
+export ATTESTD_API_KEY="atst_..."
+```
+
+```python
+with attestd.Client() as client:
+    result = client.check("nginx", "1.20.0")
 ```
 
 The SDK retries on transient 5xx responses and connection failures with

@@ -26,6 +26,7 @@ Usage (async)::
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Any
 
@@ -43,6 +44,16 @@ from attestd.errors import AttestdAPIError, AttestdError
 from attestd.models import RiskResult
 
 
+def _resolve_api_key(api_key: str | None) -> str:
+    key = (api_key or os.environ.get("ATTESTD_API_KEY") or "").strip()
+    if not key:
+        raise AttestdError(
+            "api_key is required. Pass it to Client() or set the ATTESTD_API_KEY "
+            "environment variable. Obtain a key at https://api.attestd.io/portal/login."
+        )
+    return key
+
+
 class Client:
     """
     Synchronous Attestd API client.
@@ -51,32 +62,33 @@ class Client:
     across calls. Create one Client per application and reuse it.
 
     Args:
-        api_key:     Your Attestd API key (starts with "atst_").
+        api_key:     Your Attestd API key (starts with "atst_"). Falls back to
+                     the ATTESTD_API_KEY environment variable when omitted.
         base_url:    API base URL. Defaults to https://api.attestd.io.
                      Override to point at a local instance during testing.
         timeout:     Per-request timeout in seconds. Default: 10.
         max_retries: Maximum number of retries on transient errors. Default: 3.
                      Retry 0 means one attempt total with no retries.
+        retry_delay: Base delay in seconds for exponential backoff between
+                     retries. Default: 1.0 (1s, 2s, 4s with max_retries=3).
         transport:   Custom httpx transport. Inject a mock for unit testing.
     """
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None = None,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 10.0,
         max_retries: int = 3,
+        retry_delay: float = 1.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        if not api_key or not api_key.strip():
-            raise AttestdError(
-                "api_key is required. "
-                "Obtain a key at https://api.attestd.io/portal/login."
-            )
+        resolved_key = _resolve_api_key(api_key)
         self._max_retries = max_retries
+        self._retry_delay = retry_delay
         self._http = httpx.Client(
             base_url=base_url,
-            headers=make_headers(api_key),
+            headers=make_headers(resolved_key),
             timeout=timeout,
             transport=transport,
         )
@@ -99,7 +111,6 @@ class Client:
 
         Raises:
             AttestdUnsupportedProductError: Product not in the supported list.
-                Treat as a safe unknown. It is not a caller error.
             AttestdAuthError:               API key is invalid or revoked.
             AttestdRateLimitError:          Monthly call quota exceeded.
                 Check e.retry_after for seconds to wait before retrying.
@@ -132,15 +143,21 @@ class Client:
 
         for attempt in range(self._max_retries + 1):
             if attempt > 0:
-                time.sleep(2 ** (attempt - 1))  # 1s, 2s, 4s
+                time.sleep(self._retry_delay * (2 ** (attempt - 1)))
             try:
                 response = self._http.get(CHECK_PATH, params=params)
                 if response.status_code not in _RETRY_STATUS_CODES:
                     return response
+                response.read()
                 last_exc = AttestdAPIError(
                     f"Attestd API error (HTTP {response.status_code}).",
                     status_code=response.status_code,
                 )
+            except httpx.TimeoutException as exc:
+                raise AttestdAPIError(
+                    f"Request timed out after {self._http.timeout} seconds.",
+                    status_code=0,
+                ) from exc
             except _RETRYABLE_EXCEPTIONS as exc:
                 last_exc = AttestdAPIError(
                     f"Connection to Attestd API failed: {exc}",
@@ -155,30 +172,31 @@ class AsyncClient:
     Asynchronous Attestd API client for use in async/await code.
 
     Args:
-        api_key:     Your Attestd API key (starts with "atst_").
+        api_key:     Your Attestd API key (starts with "atst_"). Falls back to
+                     the ATTESTD_API_KEY environment variable when omitted.
         base_url:    API base URL. Defaults to https://api.attestd.io.
         timeout:     Per-request timeout in seconds. Default: 10.
         max_retries: Maximum number of retries on transient errors. Default: 3.
+        retry_delay: Base delay in seconds for exponential backoff between
+                     retries. Default: 1.0.
         transport:   Custom async httpx transport. Inject a mock for unit testing.
     """
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None = None,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 10.0,
         max_retries: int = 3,
+        retry_delay: float = 1.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        if not api_key or not api_key.strip():
-            raise AttestdError(
-                "api_key is required. "
-                "Obtain a key at https://api.attestd.io/portal/login."
-            )
+        resolved_key = _resolve_api_key(api_key)
         self._max_retries = max_retries
+        self._retry_delay = retry_delay
         self._http = httpx.AsyncClient(
             base_url=base_url,
-            headers=make_headers(api_key),
+            headers=make_headers(resolved_key),
             timeout=timeout,
             transport=transport,
         )
@@ -229,15 +247,21 @@ class AsyncClient:
 
         for attempt in range(self._max_retries + 1):
             if attempt > 0:
-                await asyncio.sleep(2 ** (attempt - 1))  # 1s, 2s, 4s
+                await asyncio.sleep(self._retry_delay * (2 ** (attempt - 1)))
             try:
                 response = await self._http.get(CHECK_PATH, params=params)
                 if response.status_code not in _RETRY_STATUS_CODES:
                     return response
+                await response.aread()
                 last_exc = AttestdAPIError(
                     f"Attestd API error (HTTP {response.status_code}).",
                     status_code=response.status_code,
                 )
+            except httpx.TimeoutException as exc:
+                raise AttestdAPIError(
+                    f"Request timed out after {self._http.timeout} seconds.",
+                    status_code=0,
+                ) from exc
             except _RETRYABLE_EXCEPTIONS as exc:
                 last_exc = AttestdAPIError(
                     f"Connection to Attestd API failed: {exc}",
