@@ -7,6 +7,7 @@ Not part of the public API. May change without notice.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import httpx
 
@@ -17,7 +18,7 @@ from attestd.errors import (
     AttestdRateLimitError,
     AttestdUnsupportedProductError,
 )
-from attestd.models import RiskResult, RiskState, SupplyChainSignal
+from attestd.models import RiskResult, RiskState, SupplyChainSignal, TyposquatSignal
 
 # HTTP status codes that indicate a transient server error worth retrying.
 _RETRY_STATUS_CODES: frozenset[int] = frozenset({500, 502, 503, 504})
@@ -50,6 +51,70 @@ def _parse_optional_iso(dt_raw: str | None) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def _parse_retry_after(raw: str) -> int | None:
+    try:
+        return int(raw)
+    except ValueError:
+        pass
+    try:
+        dt = parsedate_to_datetime(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        seconds = int((dt - datetime.now(tz=timezone.utc)).total_seconds())
+        return max(0, seconds)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _parse_typosquat(raw: object | None) -> TyposquatSignal | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise AttestdAPIError(
+            "Unexpected response shape: typosquat is not an object.",
+            status_code=200,
+        )
+    detected = _require_field(raw, "detected", bool)
+    confidence_raw = _require_field(raw, "confidence", (int, float))
+    ecosystem = _require_field(raw, "ecosystem", str)
+    resembles_raw = raw.get("resembles")
+    if resembles_raw is not None and not isinstance(resembles_raw, str):
+        raise AttestdAPIError(
+            "Unexpected response shape: typosquat.resembles expected string.",
+            status_code=200,
+        )
+    return TyposquatSignal(
+        detected=detected,  # type: ignore[arg-type]
+        resembles=resembles_raw,
+        confidence=float(confidence_raw),
+        ecosystem=ecosystem,  # type: ignore[arg-type]
+    )
+
+
+def _parse_last_updated(data: dict) -> datetime:
+    last_updated_raw = data.get("last_updated")
+    if last_updated_raw is None:
+        raise AttestdAPIError(
+            "Unexpected response shape: missing 'last_updated'.",
+            status_code=200,
+        )
+    if not isinstance(last_updated_raw, str):
+        raise AttestdAPIError(
+            "Unexpected response shape: 'last_updated' expected string.",
+            status_code=200,
+        )
+    try:
+        last_updated = datetime.fromisoformat(last_updated_raw)
+        if last_updated.tzinfo is None:
+            last_updated = last_updated.replace(tzinfo=timezone.utc)
+        return last_updated
+    except ValueError as exc:
+        raise AttestdAPIError(
+            f"Unexpected response shape: invalid last_updated {last_updated_raw!r}.",
+            status_code=200,
+        ) from exc
 
 
 def _require_field(data: dict, field: str, expected_type: type) -> object:
@@ -96,10 +161,7 @@ def parse_check_response(
         retry_after: int | None = None
         raw = response.headers.get("Retry-After")
         if raw is not None:
-            try:
-                retry_after = int(raw)
-            except ValueError:
-                pass
+            retry_after = _parse_retry_after(raw)
         msg = (
             f"Rate limit exceeded. Retry after {retry_after} seconds."
             if retry_after is not None
@@ -137,8 +199,10 @@ def parse_check_response(
             status_code=200,
         )
 
+    typosquat = _parse_typosquat(data.get("typosquat"))
+
     if not data.get("supported", True):
-        raise AttestdUnsupportedProductError(product, version)
+        raise AttestdUnsupportedProductError(product, version, typosquat=typosquat)
 
     risk_state_raw = _require_field(data, "risk_state", str)
     if risk_state_raw not in _VALID_RISK_STATES:
@@ -148,24 +212,7 @@ def parse_check_response(
         )
     risk_state: RiskState = risk_state_raw  # type: ignore[assignment]
 
-    last_updated_raw = data.get("last_updated")
-    if last_updated_raw is not None:
-        if not isinstance(last_updated_raw, str):
-            raise AttestdAPIError(
-                "Unexpected response shape: 'last_updated' expected string.",
-                status_code=200,
-            )
-        try:
-            last_updated = datetime.fromisoformat(last_updated_raw)
-            if last_updated.tzinfo is None:
-                last_updated = last_updated.replace(tzinfo=timezone.utc)
-        except ValueError as exc:
-            raise AttestdAPIError(
-                f"Unexpected response shape: invalid last_updated {last_updated_raw!r}.",
-                status_code=200,
-            ) from exc
-    else:
-        last_updated = datetime.now(tz=timezone.utc)
+    last_updated = _parse_last_updated(data)
 
     supply_chain: SupplyChainSignal | None = None
     raw_sc = data.get("supply_chain")
@@ -231,4 +278,5 @@ def parse_check_response(
         cve_ids=[c for c in cve_ids_raw if isinstance(c, str)],
         last_updated=last_updated,
         supply_chain=supply_chain,
+        typosquat=typosquat,
     )

@@ -27,6 +27,16 @@ RiskFactor = Literal[
 
 
 @dataclass(frozen=True, slots=True)
+class TyposquatSignal:
+    """Package name resembles a known product (possible typosquat)."""
+
+    detected: bool
+    resembles: str | None = None
+    confidence: float = 0.0
+    ecosystem: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class SupplyChainSignal:
     """
     PyPI supply chain assessment for monitored packages (independent of CVE risk_state).
@@ -68,6 +78,7 @@ class RiskResult:
         cve_ids:               CVE IDs contributing to this assessment.
         last_updated:          UTC timestamp of the most recent synthesis run.
         supply_chain:          PyPI supply chain signal when monitored; None if CVE-only product.
+        typosquat:             Typosquat warning when the package name resembles a known product.
     """
 
     product: str
@@ -83,3 +94,4 @@ class RiskResult:
     cve_ids: list[str] = field(default_factory=list)
     last_updated: datetime = field(default_factory=lambda: datetime.min)
     supply_chain: SupplyChainSignal | None = None
+    typosquat: TyposquatSignal | None = None

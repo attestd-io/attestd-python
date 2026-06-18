@@ -16,6 +16,11 @@ single broad handler when needed:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from attestd.models import TyposquatSignal
+
 
 class AttestdError(Exception):
     """Base exception for all Attestd SDK errors."""
@@ -73,7 +78,12 @@ class AttestdUnsupportedProductError(AttestdError):
         version: The version string that was queried.
     """
 
-    def __init__(self, product: str, version: str) -> None:
+    def __init__(
+        self,
+        product: str,
+        version: str,
+        typosquat: TyposquatSignal | None = None,
+    ) -> None:
         super().__init__(
             f"Product '{product}' is outside Attestd's coverage. "
             "This does not mean the product is safe. Attestd has no data for it. "
@@ -81,6 +91,7 @@ class AttestdUnsupportedProductError(AttestdError):
         )
         self.product: str = product
         self.version: str = version
+        self.typosquat: TyposquatSignal | None = typosquat
 
 
 class AttestdAPIError(AttestdError):

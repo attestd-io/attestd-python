@@ -146,6 +146,46 @@ def test_429_without_retry_after_header():
     assert exc_info.value.retry_after is None
 
 
+def test_429_parses_retry_after_http_date():
+    from datetime import datetime, timedelta, timezone
+    from email.utils import format_datetime
+
+    retry_at = datetime.now(tz=timezone.utc) + timedelta(seconds=120)
+    header = format_datetime(retry_at, usegmt=True)
+    client = make_client([(429, {}, {"Retry-After": header})])
+    with pytest.raises(AttestdRateLimitError) as exc_info:
+        client.check("nginx", "1.20.0")
+    assert exc_info.value.retry_after is not None
+    assert 110 <= exc_info.value.retry_after <= 130
+
+
+def test_unsupported_with_typosquat_attaches_signal():
+    body = {
+        "supported": False,
+        "typosquat": {
+            "detected": True,
+            "resembles": "langchain",
+            "confidence": 0.92,
+            "ecosystem": "pypi",
+        },
+    }
+    client = make_client([(200, body)])
+    with pytest.raises(AttestdUnsupportedProductError) as exc_info:
+        client.check("langchian", "1.0.0")
+    assert exc_info.value.typosquat is not None
+    assert exc_info.value.typosquat.detected is True
+    assert exc_info.value.typosquat.resembles == "langchain"
+
+
+def test_missing_last_updated_raises_api_error():
+    body = {**SUPPORTED_NGINX_BODY}
+    del body["last_updated"]
+    client = make_client([(200, body)])
+    with pytest.raises(AttestdAPIError) as exc_info:
+        client.check("nginx", "1.20.0")
+    assert "last_updated" in str(exc_info.value)
+
+
 # ---------------------------------------------------------------------------
 # Server errors and retry
 # ---------------------------------------------------------------------------
@@ -229,6 +269,7 @@ def test_top_level_exports():
     assert hasattr(attestd, "AsyncClient")
     assert hasattr(attestd, "RiskResult")
     assert hasattr(attestd, "SupplyChainSignal")
+    assert hasattr(attestd, "TyposquatSignal")
     assert hasattr(attestd, "AttestdError")
     assert hasattr(attestd, "AttestdAuthError")
     assert hasattr(attestd, "AttestdRateLimitError")
