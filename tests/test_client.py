@@ -186,6 +186,15 @@ def test_missing_last_updated_raises_api_error():
     assert "last_updated" in str(exc_info.value)
 
 
+def test_missing_supported_raises_api_error():
+    body = {**SUPPORTED_NGINX_BODY}
+    del body["supported"]
+    client = make_client([(200, body)])
+    with pytest.raises(AttestdAPIError) as exc_info:
+        client.check("nginx", "1.20.0")
+    assert "supported" in str(exc_info.value)
+
+
 # ---------------------------------------------------------------------------
 # Server errors and retry
 # ---------------------------------------------------------------------------

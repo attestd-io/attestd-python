@@ -201,7 +201,13 @@ def parse_check_response(
 
     typosquat = _parse_typosquat(data.get("typosquat"))
 
-    if not data.get("supported", True):
+    if "supported" not in data:
+        raise AttestdAPIError(
+            "Unexpected response shape: missing 'supported'.",
+            status_code=200,
+        )
+    supported = _require_field(data, "supported", bool)
+    if supported is False:
         raise AttestdUnsupportedProductError(product, version, typosquat=typosquat)
 
     risk_state_raw = _require_field(data, "risk_state", str)
