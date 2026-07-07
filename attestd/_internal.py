@@ -35,6 +35,7 @@ _VALID_RISK_STATES: frozenset[str] = frozenset(
 
 DEFAULT_BASE_URL = "https://api.attestd.io"
 CHECK_PATH = "/v1/check"
+BATCH_PATH = "/v1/check/batch"
 USER_AGENT = f"attestd-python/{__version__}"
 
 
@@ -140,75 +141,12 @@ def make_headers(api_key: str) -> dict[str, str]:
     }
 
 
-def parse_check_response(
-    response: httpx.Response,
-    product: str,
-    version: str,
-) -> RiskResult:
+def _parse_check_dict(data: dict, product: str, version: str) -> RiskResult:
+    """Parse a supported /v1/check result dict into a RiskResult.
+
+    Caller must ensure the dict represents a supported product (supported=True).
     """
-    Parse an httpx Response from /v1/check into a RiskResult.
-
-    Raises the appropriate AttestdError subclass for non-200 responses.
-    Raises AttestdUnsupportedProductError when supported=false in the body.
-    """
-    if response.status_code == 401:
-        raise AttestdAuthError(
-            "Invalid or missing API key. "
-            "Obtain a key at https://api.attestd.io/portal/login."
-        )
-
-    if response.status_code == 429:
-        retry_after: int | None = None
-        raw = response.headers.get("Retry-After")
-        if raw is not None:
-            retry_after = _parse_retry_after(raw)
-        msg = (
-            f"Rate limit exceeded. Retry after {retry_after} seconds."
-            if retry_after is not None
-            else "Rate limit exceeded."
-        )
-        raise AttestdRateLimitError(msg, retry_after=retry_after)
-
-    if response.status_code == 404:
-        raise AttestdUnsupportedProductError(product, version)
-
-    if response.status_code >= 500:
-        raise AttestdAPIError(
-            f"Attestd API error (HTTP {response.status_code}). "
-            "The service may be temporarily unavailable. Try again shortly.",
-            status_code=response.status_code,
-        )
-
-    if response.status_code != 200:
-        raise AttestdAPIError(
-            f"Unexpected HTTP {response.status_code} from Attestd API.",
-            status_code=response.status_code,
-        )
-
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise AttestdAPIError(
-            "Failed to parse Attestd API response as JSON.",
-            status_code=200,
-        ) from exc
-
-    if not isinstance(data, dict):
-        raise AttestdAPIError(
-            "Unexpected response shape: expected JSON object.",
-            status_code=200,
-        )
-
     typosquat = _parse_typosquat(data.get("typosquat"))
-
-    if "supported" not in data:
-        raise AttestdAPIError(
-            "Unexpected response shape: missing 'supported'.",
-            status_code=200,
-        )
-    supported = _require_field(data, "supported", bool)
-    if supported is False:
-        raise AttestdUnsupportedProductError(product, version, typosquat=typosquat)
 
     risk_state_raw = _require_field(data, "risk_state", str)
     if risk_state_raw not in _VALID_RISK_STATES:
@@ -286,3 +224,167 @@ def parse_check_response(
         supply_chain=supply_chain,
         typosquat=typosquat,
     )
+
+
+def parse_check_response(
+    response: httpx.Response,
+    product: str,
+    version: str,
+) -> RiskResult:
+    """
+    Parse an httpx Response from /v1/check into a RiskResult.
+
+    Raises the appropriate AttestdError subclass for non-200 responses.
+    Raises AttestdUnsupportedProductError when supported=false in the body.
+    """
+    if response.status_code == 401:
+        raise AttestdAuthError(
+            "Invalid or missing API key. "
+            "Obtain a key at https://api.attestd.io/portal/login."
+        )
+
+    if response.status_code == 429:
+        retry_after: int | None = None
+        raw = response.headers.get("Retry-After")
+        if raw is not None:
+            retry_after = _parse_retry_after(raw)
+        msg = (
+            f"Rate limit exceeded. Retry after {retry_after} seconds."
+            if retry_after is not None
+            else "Rate limit exceeded."
+        )
+        raise AttestdRateLimitError(msg, retry_after=retry_after)
+
+    if response.status_code == 404:
+        raise AttestdUnsupportedProductError(product, version)
+
+    if response.status_code >= 500:
+        raise AttestdAPIError(
+            f"Attestd API error (HTTP {response.status_code}). "
+            "The service may be temporarily unavailable. Try again shortly.",
+            status_code=response.status_code,
+        )
+
+    if response.status_code != 200:
+        raise AttestdAPIError(
+            f"Unexpected HTTP {response.status_code} from Attestd API.",
+            status_code=response.status_code,
+        )
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise AttestdAPIError(
+            "Failed to parse Attestd API response as JSON.",
+            status_code=200,
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise AttestdAPIError(
+            "Unexpected response shape: expected JSON object.",
+            status_code=200,
+        )
+
+    typosquat = _parse_typosquat(data.get("typosquat"))
+
+    if "supported" not in data:
+        raise AttestdAPIError(
+            "Unexpected response shape: missing 'supported'.",
+            status_code=200,
+        )
+    supported = _require_field(data, "supported", bool)
+    if supported is False:
+        raise AttestdUnsupportedProductError(product, version, typosquat=typosquat)
+
+    return _parse_check_dict(data, product, version)
+
+
+def parse_batch_check_response(
+    response: httpx.Response,
+    items: list[tuple[str, str]],
+) -> list[RiskResult | None]:
+    """
+    Parse an httpx Response from POST /v1/check/batch.
+
+    Returns one entry per input item, in the same order. None means the
+    product is not in Attestd's coverage (supported=false). Auth and rate
+    limit errors raise immediately — the whole batch is rejected.
+
+    Raises:
+        AttestdAuthError: HTTP 401.
+        AttestdRateLimitError: HTTP 429. No items are billed when this fires.
+        AttestdAPIError: Any other non-200 response or malformed body.
+    """
+    if response.status_code == 401:
+        raise AttestdAuthError(
+            "Invalid or missing API key. "
+            "Obtain a key at https://api.attestd.io/portal/login."
+        )
+
+    if response.status_code == 429:
+        retry_after: int | None = None
+        raw = response.headers.get("Retry-After")
+        if raw is not None:
+            retry_after = _parse_retry_after(raw)
+        msg = (
+            f"Rate limit exceeded. Retry after {retry_after} seconds."
+            if retry_after is not None
+            else "Rate limit exceeded."
+        )
+        raise AttestdRateLimitError(msg, retry_after=retry_after)
+
+    if response.status_code >= 500:
+        raise AttestdAPIError(
+            f"Attestd API error (HTTP {response.status_code}). "
+            "The service may be temporarily unavailable. Try again shortly.",
+            status_code=response.status_code,
+        )
+
+    if response.status_code != 200:
+        raise AttestdAPIError(
+            f"Unexpected HTTP {response.status_code} from Attestd API.",
+            status_code=response.status_code,
+        )
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise AttestdAPIError(
+            "Failed to parse Attestd batch API response as JSON.",
+            status_code=200,
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise AttestdAPIError(
+            "Unexpected batch response shape: expected JSON object.",
+            status_code=200,
+        )
+
+    results_raw = data.get("results")
+    if not isinstance(results_raw, list):
+        raise AttestdAPIError(
+            "Unexpected batch response shape: missing 'results' list.",
+            status_code=200,
+        )
+
+    out: list[RiskResult | None] = []
+    for i, entry in enumerate(results_raw):
+        if not isinstance(entry, dict):
+            raise AttestdAPIError(
+                f"Unexpected batch response shape: entry {i} is not an object.",
+                status_code=200,
+            )
+        result_raw = entry.get("result")
+        if not isinstance(result_raw, dict):
+            raise AttestdAPIError(
+                f"Unexpected batch response shape: entry {i} result is not an object.",
+                status_code=200,
+            )
+        if result_raw.get("supported") is False:
+            out.append(None)
+        else:
+            product = str(entry.get("product") or (items[i][0] if i < len(items) else ""))
+            version = str(entry.get("version") or (items[i][1] if i < len(items) else ""))
+            out.append(_parse_check_dict(result_raw, product, version))
+
+    return out

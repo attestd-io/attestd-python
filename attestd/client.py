@@ -33,11 +33,13 @@ from typing import Any
 import httpx
 
 from attestd._internal import (
+    BATCH_PATH,
     CHECK_PATH,
     DEFAULT_BASE_URL,
     _RETRYABLE_EXCEPTIONS,
     _RETRY_STATUS_CODES,
     make_headers,
+    parse_batch_check_response,
     parse_check_response,
 )
 from attestd.errors import AttestdAPIError, AttestdError
@@ -119,6 +121,34 @@ class Client:
         response = self._send_with_retry(product, version)
         return parse_check_response(response, product, version)
 
+    def batch_check(self, items: list[tuple[str, str]]) -> list[RiskResult | None]:
+        """
+        Check up to 100 product versions in one API call.
+
+        Each tuple is (product, version). Results are returned in the same
+        order as the input. None means the product is not in Attestd's
+        coverage (supported=false). Each item counts as one API call against
+        your quota.
+
+        If the batch would exceed your quota, AttestdRateLimitError is raised
+        before any results are delivered and no items are billed.
+
+        Raises:
+            AttestdError:          items exceeds 100.
+            AttestdAuthError:      API key is invalid or revoked.
+            AttestdRateLimitError: Quota exceeded (no items are billed).
+            AttestdAPIError:       Server error after all retries.
+        """
+        if not items:
+            return []
+        if len(items) > 100:
+            raise AttestdError(
+                f"batch_check accepts at most 100 items; got {len(items)}."
+            )
+        body = {"items": [{"product": p, "version": v} for p, v in items]}
+        response = self._post_with_retry(body)
+        return parse_batch_check_response(response, items)
+
     def close(self) -> None:
         """Close the underlying HTTP connection pool."""
         self._http.close()
@@ -146,6 +176,34 @@ class Client:
                 time.sleep(self._retry_delay * (2 ** (attempt - 1)))
             try:
                 response = self._http.get(CHECK_PATH, params=params)
+                if response.status_code not in _RETRY_STATUS_CODES:
+                    return response
+                response.read()
+                last_exc = AttestdAPIError(
+                    f"Attestd API error (HTTP {response.status_code}).",
+                    status_code=response.status_code,
+                )
+            except httpx.TimeoutException as exc:
+                raise AttestdAPIError(
+                    f"Request timed out after {self._http.timeout} seconds.",
+                    status_code=0,
+                ) from exc
+            except _RETRYABLE_EXCEPTIONS as exc:
+                last_exc = AttestdAPIError(
+                    f"Connection to Attestd API failed: {exc}",
+                    status_code=0,
+                )
+
+        raise last_exc  # type: ignore[misc]
+
+    def _post_with_retry(self, body: dict) -> httpx.Response:
+        last_exc: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            if attempt > 0:
+                time.sleep(self._retry_delay * (2 ** (attempt - 1)))
+            try:
+                response = self._http.post(BATCH_PATH, json=body)
                 if response.status_code not in _RETRY_STATUS_CODES:
                     return response
                 response.read()
@@ -223,6 +281,18 @@ class AsyncClient:
         response = await self._send_with_retry(product, version)
         return parse_check_response(response, product, version)
 
+    async def batch_check(self, items: list[tuple[str, str]]) -> list[RiskResult | None]:
+        """Async version of Client.batch_check(). See Client.batch_check() for full docs."""
+        if not items:
+            return []
+        if len(items) > 100:
+            raise AttestdError(
+                f"batch_check accepts at most 100 items; got {len(items)}."
+            )
+        body = {"items": [{"product": p, "version": v} for p, v in items]}
+        response = await self._post_with_retry(body)
+        return parse_batch_check_response(response, items)
+
     async def aclose(self) -> None:
         """Close the underlying async HTTP connection pool."""
         await self._http.aclose()
@@ -250,6 +320,34 @@ class AsyncClient:
                 await asyncio.sleep(self._retry_delay * (2 ** (attempt - 1)))
             try:
                 response = await self._http.get(CHECK_PATH, params=params)
+                if response.status_code not in _RETRY_STATUS_CODES:
+                    return response
+                await response.aread()
+                last_exc = AttestdAPIError(
+                    f"Attestd API error (HTTP {response.status_code}).",
+                    status_code=response.status_code,
+                )
+            except httpx.TimeoutException as exc:
+                raise AttestdAPIError(
+                    f"Request timed out after {self._http.timeout} seconds.",
+                    status_code=0,
+                ) from exc
+            except _RETRYABLE_EXCEPTIONS as exc:
+                last_exc = AttestdAPIError(
+                    f"Connection to Attestd API failed: {exc}",
+                    status_code=0,
+                )
+
+        raise last_exc  # type: ignore[misc]
+
+    async def _post_with_retry(self, body: dict) -> httpx.Response:
+        last_exc: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            if attempt > 0:
+                await asyncio.sleep(self._retry_delay * (2 ** (attempt - 1)))
+            try:
+                response = await self._http.post(BATCH_PATH, json=body)
                 if response.status_code not in _RETRY_STATUS_CODES:
                     return response
                 await response.aread()
