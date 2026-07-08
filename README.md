@@ -26,13 +26,32 @@ print(result.risk_state)  # "high"
 print(result.cve_ids)     # ["CVE-2021-23017", ...]
 ```
 
+## Batch check
+
+Check up to 100 packages in one request. Each item costs one API call. A 429 rejects the entire batch before billing.
+
+```python
+results = client.batch_check([
+    ("litellm", "1.82.7"),
+    ("nginx", "1.25.3"),
+])
+# results[i] is RiskResult | None — None means outside coverage
+```
+
+Async:
+
+```python
+results = await client.batch_check([("litellm", "1.82.7"), ("nginx", "1.25.3")])
+```
+
 ## Supply chain check
 
 Attestd monitors select PyPI and npm packages for known malicious publishes.
 
 ```python
 result = client.check("litellm", "1.82.7")
-print(result.supply_chain.compromised)  # True
+if result.supply_chain:
+    print(result.supply_chain.compromised)  # True
 ```
 
 ## Error handling
@@ -170,6 +189,9 @@ except attestd.AttestdUnsupportedProductError as e:
 | `cve_ids` | `list[str]` | CVE IDs in this assessment |
 | `last_updated` | `datetime` | UTC timestamp of last synthesis run |
 | `supply_chain` | `SupplyChainSignal \| None` | PyPI/npm supply chain signal when monitored; `None` for CVE-only products |
+| `typosquat` | `TyposquatSignal \| None` | Present when the package name resembles a known product |
+
+**TyposquatSignal:** `detected`, `resembles`, `confidence`, `ecosystem`
 
 ### Risk states
 
@@ -231,6 +253,8 @@ from attestd.testing import (
     NGINX_VULNERABLE,
     LOG4J_CRITICAL,
     UNSUPPORTED,
+    LITELLM_SAFE,
+    LITELLM_COMPROMISED,
 )
 ```
 
