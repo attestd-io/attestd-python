@@ -111,3 +111,61 @@ class RiskResult:
     last_updated: datetime = field(default_factory=lambda: datetime.min)
     supply_chain: SupplyChainSignal | None = None
     typosquat: TyposquatSignal | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProductEntry:
+    """CVE-covered infrastructure product from GET /v1/products."""
+
+    slug: str
+    display_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class SupplyChainEntry:
+    """Monitored supply chain package from GET /v1/products."""
+
+    package: str
+    ecosystem: str
+    display_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProductsResult:
+    """Full product catalog from GET /v1/products."""
+
+    cve_products: list[ProductEntry]
+    supply_chain_packages: list[SupplyChainEntry]
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
+class CveDetail:
+    """CVE record from GET /v1/cve/{cve_id}."""
+
+    cve_id: str
+    description: str | None
+    cvss_score: float | None
+    cvss_vector: str | None
+    actively_exploited: bool
+    remote_exploitable: bool
+    authentication_required: bool
+    affected_products: list[str]
+    epss_score: float | None
+    epss_percentile: float | None
+    source_published_at: datetime | None
+    last_checked_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class UsageResult:
+    """API key quota and billing usage from GET /v1/usage."""
+
+    tier: str
+    key_calls_this_month: int
+    account_calls_this_month: int
+    included_calls: int
+    billing_period_start: datetime
+    billing_period_end: datetime
+    overage_calls: int
+    estimated_overage_usd: float

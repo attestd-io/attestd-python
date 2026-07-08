@@ -35,15 +35,21 @@ import httpx
 from attestd._internal import (
     BATCH_PATH,
     CHECK_PATH,
+    CVE_PATH_PREFIX,
     DEFAULT_BASE_URL,
+    PRODUCTS_PATH,
+    USAGE_PATH,
     _RETRYABLE_EXCEPTIONS,
     _RETRY_STATUS_CODES,
     make_headers,
     parse_batch_check_response,
     parse_check_response,
+    parse_cve_response,
+    parse_products_response,
+    parse_usage_response,
 )
 from attestd.errors import AttestdAPIError, AttestdError
-from attestd.models import RiskResult
+from attestd.models import CveDetail, ProductsResult, RiskResult, UsageResult
 
 
 def _resolve_api_key(api_key: str | None) -> str:
@@ -149,6 +155,22 @@ class Client:
         response = self._post_with_retry(body)
         return parse_batch_check_response(response, items)
 
+    def products(self) -> ProductsResult:
+        """Return the full Attestd product catalog (CVE + supply chain)."""
+        response = self._get_with_retry(PRODUCTS_PATH)
+        return parse_products_response(response)
+
+    def cve(self, cve_id: str) -> CveDetail:
+        """Return details for a single CVE id. Raises AttestdAPIError on 404."""
+        path = f"{CVE_PATH_PREFIX}{cve_id.strip()}"
+        response = self._get_with_retry(path)
+        return parse_cve_response(response, cve_id.strip())
+
+    def usage(self) -> UsageResult:
+        """Return API key quota usage for the current billing period."""
+        response = self._get_with_retry(USAGE_PATH)
+        return parse_usage_response(response)
+
     def close(self) -> None:
         """Close the underlying HTTP connection pool."""
         self._http.close()
@@ -204,6 +226,34 @@ class Client:
                 time.sleep(self._retry_delay * (2 ** (attempt - 1)))
             try:
                 response = self._http.post(BATCH_PATH, json=body)
+                if response.status_code not in _RETRY_STATUS_CODES:
+                    return response
+                response.read()
+                last_exc = AttestdAPIError(
+                    f"Attestd API error (HTTP {response.status_code}).",
+                    status_code=response.status_code,
+                )
+            except httpx.TimeoutException as exc:
+                raise AttestdAPIError(
+                    f"Request timed out after {self._http.timeout} seconds.",
+                    status_code=0,
+                ) from exc
+            except _RETRYABLE_EXCEPTIONS as exc:
+                last_exc = AttestdAPIError(
+                    f"Connection to Attestd API failed: {exc}",
+                    status_code=0,
+                )
+
+        raise last_exc  # type: ignore[misc]
+
+    def _get_with_retry(self, path: str) -> httpx.Response:
+        last_exc: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            if attempt > 0:
+                time.sleep(self._retry_delay * (2 ** (attempt - 1)))
+            try:
+                response = self._http.get(path)
                 if response.status_code not in _RETRY_STATUS_CODES:
                     return response
                 response.read()
@@ -293,6 +343,22 @@ class AsyncClient:
         response = await self._post_with_retry(body)
         return parse_batch_check_response(response, items)
 
+    async def products(self) -> ProductsResult:
+        """Async version of Client.products()."""
+        response = await self._get_with_retry(PRODUCTS_PATH)
+        return parse_products_response(response)
+
+    async def cve(self, cve_id: str) -> CveDetail:
+        """Async version of Client.cve()."""
+        path = f"{CVE_PATH_PREFIX}{cve_id.strip()}"
+        response = await self._get_with_retry(path)
+        return parse_cve_response(response, cve_id.strip())
+
+    async def usage(self) -> UsageResult:
+        """Async version of Client.usage()."""
+        response = await self._get_with_retry(USAGE_PATH)
+        return parse_usage_response(response)
+
     async def aclose(self) -> None:
         """Close the underlying async HTTP connection pool."""
         await self._http.aclose()
@@ -348,6 +414,34 @@ class AsyncClient:
                 await asyncio.sleep(self._retry_delay * (2 ** (attempt - 1)))
             try:
                 response = await self._http.post(BATCH_PATH, json=body)
+                if response.status_code not in _RETRY_STATUS_CODES:
+                    return response
+                await response.aread()
+                last_exc = AttestdAPIError(
+                    f"Attestd API error (HTTP {response.status_code}).",
+                    status_code=response.status_code,
+                )
+            except httpx.TimeoutException as exc:
+                raise AttestdAPIError(
+                    f"Request timed out after {self._http.timeout} seconds.",
+                    status_code=0,
+                ) from exc
+            except _RETRYABLE_EXCEPTIONS as exc:
+                last_exc = AttestdAPIError(
+                    f"Connection to Attestd API failed: {exc}",
+                    status_code=0,
+                )
+
+        raise last_exc  # type: ignore[misc]
+
+    async def _get_with_retry(self, path: str) -> httpx.Response:
+        last_exc: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            if attempt > 0:
+                await asyncio.sleep(self._retry_delay * (2 ** (attempt - 1)))
+            try:
+                response = await self._http.get(path)
                 if response.status_code not in _RETRY_STATUS_CODES:
                     return response
                 await response.aread()

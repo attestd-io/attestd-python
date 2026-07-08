@@ -18,7 +18,18 @@ from attestd.errors import (
     AttestdRateLimitError,
     AttestdUnsupportedProductError,
 )
-from attestd.models import RiskResult, RiskState, SupplyChainSignal, TyposquatSignal, CveSummary
+from attestd.models import (
+    CveDetail,
+    CveSummary,
+    ProductEntry,
+    ProductsResult,
+    RiskResult,
+    RiskState,
+    SupplyChainEntry,
+    SupplyChainSignal,
+    TyposquatSignal,
+    UsageResult,
+)
 
 # HTTP status codes that indicate a transient server error worth retrying.
 _RETRY_STATUS_CODES: frozenset[int] = frozenset({500, 502, 503, 504})
@@ -36,6 +47,9 @@ _VALID_RISK_STATES: frozenset[str] = frozenset(
 DEFAULT_BASE_URL = "https://api.attestd.io"
 CHECK_PATH = "/v1/check"
 BATCH_PATH = "/v1/check/batch"
+PRODUCTS_PATH = "/v1/products"
+CVE_PATH_PREFIX = "/v1/cve/"
+USAGE_PATH = "/v1/usage"
 USER_AGENT = f"attestd-python/{__version__}"
 
 
@@ -415,3 +429,226 @@ def parse_batch_check_response(
             out.append(_parse_check_dict(result_raw, product, version))
 
     return out
+
+
+def _raise_auth_or_rate_limit(response: httpx.Response) -> None:
+    if response.status_code == 401:
+        raise AttestdAuthError(
+            "Invalid or missing API key. "
+            "Obtain a key at https://api.attestd.io/portal/login."
+        )
+
+    if response.status_code == 429:
+        retry_after: int | None = None
+        raw = response.headers.get("Retry-After")
+        if raw is not None:
+            retry_after = _parse_retry_after(raw)
+        msg = (
+            f"Rate limit exceeded. Retry after {retry_after} seconds."
+            if retry_after is not None
+            else "Rate limit exceeded."
+        )
+        raise AttestdRateLimitError(msg, retry_after=retry_after)
+
+
+def _parse_json_object(response: httpx.Response, *, context: str) -> dict:
+    _raise_auth_or_rate_limit(response)
+
+    if response.status_code >= 500:
+        raise AttestdAPIError(
+            f"Attestd API error (HTTP {response.status_code}). "
+            "The service may be temporarily unavailable. Try again shortly.",
+            status_code=response.status_code,
+        )
+
+    if response.status_code != 200:
+        raise AttestdAPIError(
+            f"Unexpected HTTP {response.status_code} from Attestd API.",
+            status_code=response.status_code,
+        )
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise AttestdAPIError(
+            f"Failed to parse Attestd {context} response as JSON.",
+            status_code=200,
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise AttestdAPIError(
+            f"Unexpected {context} response shape: expected JSON object.",
+            status_code=200,
+        )
+    return data
+
+
+def parse_products_response(response: httpx.Response) -> ProductsResult:
+    """Parse GET /v1/products into a ProductsResult."""
+    data = _parse_json_object(response, context="products")
+
+    cve_raw = data.get("cve_products")
+    if not isinstance(cve_raw, list):
+        raise AttestdAPIError(
+            "Unexpected products response shape: missing 'cve_products' list.",
+            status_code=200,
+        )
+
+    sc_raw = data.get("supply_chain_packages")
+    if not isinstance(sc_raw, list):
+        raise AttestdAPIError(
+            "Unexpected products response shape: missing 'supply_chain_packages' list.",
+            status_code=200,
+        )
+
+    total_raw = data.get("total")
+    if not isinstance(total_raw, int):
+        raise AttestdAPIError(
+            "Unexpected products response shape: 'total' expected int.",
+            status_code=200,
+        )
+
+    cve_products: list[ProductEntry] = []
+    for i, item in enumerate(cve_raw):
+        if not isinstance(item, dict):
+            raise AttestdAPIError(
+                f"Unexpected products response shape: cve_products[{i}] is not an object.",
+                status_code=200,
+            )
+        cve_products.append(
+            ProductEntry(
+                slug=_require_field(item, "slug", str),  # type: ignore[arg-type]
+                display_name=_require_field(item, "display_name", str),  # type: ignore[arg-type]
+            )
+        )
+
+    supply_chain_packages: list[SupplyChainEntry] = []
+    for i, item in enumerate(sc_raw):
+        if not isinstance(item, dict):
+            raise AttestdAPIError(
+                f"Unexpected products response shape: supply_chain_packages[{i}] is not an object.",
+                status_code=200,
+            )
+        display_raw = item.get("display_name")
+        if display_raw is not None and not isinstance(display_raw, str):
+            raise AttestdAPIError(
+                f"Unexpected products response shape: supply_chain_packages[{i}].display_name expected string.",
+                status_code=200,
+            )
+        supply_chain_packages.append(
+            SupplyChainEntry(
+                package=_require_field(item, "package", str),  # type: ignore[arg-type]
+                ecosystem=_require_field(item, "ecosystem", str),  # type: ignore[arg-type]
+                display_name=display_raw,
+            )
+        )
+
+    return ProductsResult(
+        cve_products=cve_products,
+        supply_chain_packages=supply_chain_packages,
+        total=total_raw,
+    )
+
+
+def parse_cve_response(response: httpx.Response, cve_id: str) -> CveDetail:
+    """Parse GET /v1/cve/{cve_id} into a CveDetail."""
+    _raise_auth_or_rate_limit(response)
+
+    if response.status_code == 404:
+        raise AttestdAPIError(
+            f"CVE not found: {cve_id}",
+            status_code=404,
+        )
+
+    if response.status_code == 400:
+        raise AttestdAPIError(
+            "Invalid CVE id format (expected CVE-YYYY-NNNN).",
+            status_code=400,
+        )
+
+    if response.status_code >= 500:
+        raise AttestdAPIError(
+            f"Attestd API error (HTTP {response.status_code}). "
+            "The service may be temporarily unavailable. Try again shortly.",
+            status_code=response.status_code,
+        )
+
+    if response.status_code != 200:
+        raise AttestdAPIError(
+            f"Unexpected HTTP {response.status_code} from Attestd API.",
+            status_code=response.status_code,
+        )
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise AttestdAPIError(
+            "Failed to parse Attestd CVE response as JSON.",
+            status_code=200,
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise AttestdAPIError(
+            "Unexpected CVE response shape: expected JSON object.",
+            status_code=200,
+        )
+
+    cvss_raw = data.get("cvss_score")
+    epss_raw = data.get("epss_score")
+    epss_pct_raw = data.get("epss_percentile")
+    affected_raw = data.get("affected_products") or []
+    if not isinstance(affected_raw, list):
+        raise AttestdAPIError(
+            "Unexpected CVE response shape: 'affected_products' expected list.",
+            status_code=200,
+        )
+
+    return CveDetail(
+        cve_id=_require_field(data, "cve_id", str),  # type: ignore[arg-type]
+        description=data.get("description") if isinstance(data.get("description"), (str, type(None))) else None,
+        cvss_score=float(cvss_raw) if isinstance(cvss_raw, (int, float)) else None,
+        cvss_vector=data.get("cvss_vector") if isinstance(data.get("cvss_vector"), (str, type(None))) else None,
+        actively_exploited=bool(data.get("actively_exploited", False)),
+        remote_exploitable=bool(data.get("remote_exploitable", False)),
+        authentication_required=bool(data.get("authentication_required", False)),
+        affected_products=[p for p in affected_raw if isinstance(p, str)],
+        epss_score=float(epss_raw) if isinstance(epss_raw, (int, float)) else None,
+        epss_percentile=float(epss_pct_raw) if isinstance(epss_pct_raw, (int, float)) else None,
+        source_published_at=_parse_optional_iso(
+            data.get("source_published_at") if isinstance(data.get("source_published_at"), (str, type(None))) else None
+        ),
+        last_checked_at=_parse_optional_iso(
+            data.get("last_checked_at") if isinstance(data.get("last_checked_at"), (str, type(None))) else None
+        ),
+    )
+
+
+def parse_usage_response(response: httpx.Response) -> UsageResult:
+    """Parse GET /v1/usage into a UsageResult."""
+    data = _parse_json_object(response, context="usage")
+
+    billing_start = _parse_optional_iso(
+        data.get("billing_period_start") if isinstance(data.get("billing_period_start"), str) else None
+    )
+    billing_end = _parse_optional_iso(
+        data.get("billing_period_end") if isinstance(data.get("billing_period_end"), str) else None
+    )
+    if billing_start is None or billing_end is None:
+        raise AttestdAPIError(
+            "Unexpected usage response shape: missing billing period timestamps.",
+            status_code=200,
+        )
+
+    overage_raw = data.get("overage_calls", 0)
+    overage_usd_raw = data.get("estimated_overage_usd", 0.0)
+
+    return UsageResult(
+        tier=_require_field(data, "tier", str),  # type: ignore[arg-type]
+        key_calls_this_month=_require_field(data, "key_calls_this_month", int),  # type: ignore[arg-type]
+        account_calls_this_month=_require_field(data, "account_calls_this_month", int),  # type: ignore[arg-type]
+        included_calls=_require_field(data, "included_calls", int),  # type: ignore[arg-type]
+        billing_period_start=billing_start,
+        billing_period_end=billing_end,
+        overage_calls=int(overage_raw) if isinstance(overage_raw, int) else 0,
+        estimated_overage_usd=float(overage_usd_raw) if isinstance(overage_usd_raw, (int, float)) else 0.0,
+    )
