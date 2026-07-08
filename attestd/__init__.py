@@ -54,7 +54,7 @@ from attestd.errors import (
     AttestdRateLimitError,
     AttestdUnsupportedProductError,
 )
-from attestd.models import RiskFactor, RiskResult, RiskState, SupplyChainSignal, TyposquatSignal
+from attestd.models import RiskFactor, RiskResult, RiskState, SupplyChainSignal, TyposquatSignal, CveSummary
 
 __all__ = [
     "__version__",
@@ -67,6 +67,7 @@ __all__ = [
     "RiskFactor",
     "SupplyChainSignal",
     "TyposquatSignal",
+    "CveSummary",
     # Errors
     "AttestdError",
     "AttestdAuthError",

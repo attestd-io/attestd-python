@@ -37,6 +37,18 @@ class TyposquatSignal:
 
 
 @dataclass(frozen=True, slots=True)
+class CveSummary:
+    """Per-CVE detail record returned when include=cves is passed."""
+
+    cve_id: str
+    cvss_score: float | None = None
+    actively_exploited: bool = False
+    remote_exploitable: bool = False
+    epss_score: float | None = None
+    epss_percentile: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SupplyChainSignal:
     """
     PyPI supply chain assessment for monitored packages (independent of CVE risk_state).
@@ -76,6 +88,8 @@ class RiskResult:
         confidence:            Synthesis confidence (0.0–1.0).
                                Values < 0.7 indicate LLM fallback to DB-derived fields.
         cve_ids:               CVE IDs contributing to this assessment.
+        max_epss:              Highest EPSS probability across matching CVEs, or None.
+        cves:                  Per-CVE detail when include=cves was requested.
         last_updated:          UTC timestamp of the most recent synthesis run.
         supply_chain:          PyPI supply chain signal when monitored; None if CVE-only product.
         typosquat:             Typosquat warning when the package name resembles a known product.
@@ -92,6 +106,8 @@ class RiskResult:
     fixed_version: str | None
     confidence: float
     cve_ids: list[str] = field(default_factory=list)
+    max_epss: float | None = None
+    cves: list[CveSummary] = field(default_factory=list)
     last_updated: datetime = field(default_factory=lambda: datetime.min)
     supply_chain: SupplyChainSignal | None = None
     typosquat: TyposquatSignal | None = None

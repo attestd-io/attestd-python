@@ -18,7 +18,7 @@ from attestd.errors import (
     AttestdRateLimitError,
     AttestdUnsupportedProductError,
 )
-from attestd.models import RiskResult, RiskState, SupplyChainSignal, TyposquatSignal
+from attestd.models import RiskResult, RiskState, SupplyChainSignal, TyposquatSignal, CveSummary
 
 # HTTP status codes that indicate a transient server error worth retrying.
 _RETRY_STATUS_CODES: frozenset[int] = frozenset({500, 502, 503, 504})
@@ -208,6 +208,31 @@ def _parse_check_dict(data: dict, product: str, version: str) -> RiskResult:
 
     confidence_raw = _require_field(data, "confidence", (int, float))
 
+    max_epss_raw = data.get("max_epss")
+    max_epss = float(max_epss_raw) if isinstance(max_epss_raw, (int, float)) else None
+
+    cves: list[CveSummary] = []
+    cves_raw = data.get("cves")
+    if isinstance(cves_raw, list):
+        for item in cves_raw:
+            if not isinstance(item, dict):
+                continue
+            cvss_raw = item.get("cvss_score")
+            epss_raw = item.get("epss_score")
+            epss_pct_raw = item.get("epss_percentile")
+            cves.append(
+                CveSummary(
+                    cve_id=str(item.get("cve_id", "")),
+                    cvss_score=float(cvss_raw) if isinstance(cvss_raw, (int, float)) else None,
+                    actively_exploited=bool(item.get("actively_exploited", False)),
+                    remote_exploitable=bool(item.get("remote_exploitable", False)),
+                    epss_score=float(epss_raw) if isinstance(epss_raw, (int, float)) else None,
+                    epss_percentile=(
+                        float(epss_pct_raw) if isinstance(epss_pct_raw, (int, float)) else None
+                    ),
+                )
+            )
+
     return RiskResult(
         product=_require_field(data, "product", str),  # type: ignore[arg-type]
         version=_require_field(data, "version", str),  # type: ignore[arg-type]
@@ -220,6 +245,8 @@ def _parse_check_dict(data: dict, product: str, version: str) -> RiskResult:
         fixed_version=data.get("fixed_version"),
         confidence=float(confidence_raw),
         cve_ids=[c for c in cve_ids_raw if isinstance(c, str)],
+        max_epss=max_epss,
+        cves=cves,
         last_updated=last_updated,
         supply_chain=supply_chain,
         typosquat=typosquat,

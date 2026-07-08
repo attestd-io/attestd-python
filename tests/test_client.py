@@ -62,6 +62,36 @@ def test_check_fixed_version_none():
     assert result.patch_available is False
 
 
+def test_check_parses_max_epss_and_cves():
+    body = {
+        **LOG4J_CRITICAL_BODY,
+        "max_epss": 0.9401,
+        "cves": [
+            {
+                "cve_id": "CVE-2021-44228",
+                "cvss_score": 10.0,
+                "actively_exploited": True,
+                "remote_exploitable": True,
+                "epss_score": 0.9401,
+                "epss_percentile": 0.99,
+            }
+        ],
+    }
+    client = make_client([(200, body)])
+    result = client.check("log4j", "2.14.1")
+    assert result.max_epss == pytest.approx(0.9401)
+    assert len(result.cves) == 1
+    assert result.cves[0].cve_id == "CVE-2021-44228"
+    assert result.cves[0].epss_score == pytest.approx(0.9401)
+
+
+def test_check_max_epss_none_when_absent():
+    client = make_client([(200, SUPPORTED_NGINX_BODY)])
+    result = client.check("nginx", "1.20.0")
+    assert result.max_epss is None
+    assert result.cves == []
+
+
 def test_check_risk_factors_empty_for_none_state():
     body = {
         **SUPPORTED_NGINX_BODY,
@@ -279,6 +309,7 @@ def test_top_level_exports():
     assert hasattr(attestd, "RiskResult")
     assert hasattr(attestd, "SupplyChainSignal")
     assert hasattr(attestd, "TyposquatSignal")
+    assert hasattr(attestd, "CveSummary")
     assert hasattr(attestd, "AttestdError")
     assert hasattr(attestd, "AttestdAuthError")
     assert hasattr(attestd, "AttestdRateLimitError")
