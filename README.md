@@ -44,6 +44,45 @@ Async:
 results = await client.batch_check([("litellm", "1.82.7"), ("nginx", "1.25.3")])
 ```
 
+## Catalog and quota
+
+Three additional endpoints for product discovery, CVE lookup, and quota monitoring. All require a valid API key.
+
+### Products catalog
+
+```python
+catalog = client.products()
+print(catalog.total)
+print(catalog.cve_products[0].slug)
+print(catalog.supply_chain_packages[0].package)
+```
+
+Returns `ProductsResult` with `cve_products`, `supply_chain_packages`, and `total`. Maps to `GET /v1/products`.
+
+### CVE detail
+
+```python
+try:
+    detail = client.cve("CVE-2021-44228")
+    print(detail.cvss_score, detail.epss_score)
+except attestd.AttestdAPIError as e:
+    if e.status_code == 404:
+        print("CVE not in database")
+```
+
+Returns `CveDetail` with CVSS, EPSS, KEV status, and affected products. Raises `AttestdAPIError(status_code=404)` when the CVE is not in Attestd's database.
+
+### Usage quota
+
+```python
+usage = client.usage()
+print(usage.tier)
+print(usage.key_calls_this_month, "/", usage.included_calls)
+print(usage.billing_period_end)
+```
+
+Returns `UsageResult` with calls used this month, included cap, billing period, and overage estimate. Use for quota monitoring in CI or agent loops.
+
 ## Supply chain check
 
 Attestd monitors select PyPI and npm packages for known malicious publishes.
@@ -213,6 +252,16 @@ except attestd.AttestdUnsupportedProductError as e:
 | `internet_exposed_service` | Remote + no auth (surface area flag) |
 | `patch_available` | A fix is available |
 
+## Catalog and quota types
+
+| Type | Key fields |
+|---|---|
+| `ProductEntry` | `slug`, `display_name` |
+| `SupplyChainEntry` | `package`, `ecosystem`, `display_name` |
+| `ProductsResult` | `cve_products`, `supply_chain_packages`, `total` |
+| `CveDetail` | `cve_id`, `description`, `cvss_score`, `cvss_vector`, `actively_exploited`, `remote_exploitable`, `authentication_required`, `affected_products`, `epss_score`, `epss_percentile`, `source_published_at`, `last_checked_at` |
+| `UsageResult` | `tier`, `key_calls_this_month`, `account_calls_this_month`, `included_calls`, `billing_period_start`, `billing_period_end`, `overage_calls`, `estimated_overage_usd` |
+
 ## Configuration
 
 ```python
@@ -255,6 +304,9 @@ from attestd.testing import (
     UNSUPPORTED,
     LITELLM_SAFE,
     LITELLM_COMPROMISED,
+    PRODUCTS_RESPONSE,
+    CVE_LOG4SHELL,
+    USAGE_SOLO,
 )
 ```
 
