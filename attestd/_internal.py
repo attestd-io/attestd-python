@@ -100,11 +100,35 @@ def _parse_typosquat(raw: object | None) -> TyposquatSignal | None:
             "Unexpected response shape: typosquat.resembles expected string.",
             status_code=200,
         )
+    kind_raw = raw.get("kind", "typosquat")
+    if kind_raw is None:
+        kind_raw = "typosquat"
+    if not isinstance(kind_raw, str) or kind_raw not in ("typosquat", "hallucination"):
+        raise AttestdAPIError(
+            "Unexpected response shape: typosquat.kind expected 'typosquat' or 'hallucination'.",
+            status_code=200,
+        )
+    likely_raw = raw.get("likely_intended") or []
+    if not isinstance(likely_raw, list):
+        raise AttestdAPIError(
+            "Unexpected response shape: typosquat.likely_intended expected list.",
+            status_code=200,
+        )
+    likely: list[str] = []
+    for item in likely_raw:
+        if not isinstance(item, str):
+            raise AttestdAPIError(
+                "Unexpected response shape: typosquat.likely_intended items must be strings.",
+                status_code=200,
+            )
+        likely.append(item)
     return TyposquatSignal(
         detected=detected,  # type: ignore[arg-type]
         resembles=resembles_raw,
         confidence=float(confidence_raw),
         ecosystem=ecosystem,  # type: ignore[arg-type]
+        kind=kind_raw,  # type: ignore[arg-type]
+        likely_intended=tuple(likely),
     )
 
 

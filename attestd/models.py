@@ -28,12 +28,14 @@ RiskFactor = Literal[
 
 @dataclass(frozen=True, slots=True)
 class TyposquatSignal:
-    """Package name resembles a known product (possible typosquat)."""
+    """Package name integrity signal (typosquat or AI-hallucinated name)."""
 
     detected: bool
     resembles: str | None = None
     confidence: float = 0.0
     ecosystem: str = ""
+    kind: Literal["typosquat", "hallucination"] = "typosquat"
+    likely_intended: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

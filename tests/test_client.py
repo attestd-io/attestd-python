@@ -205,6 +205,28 @@ def test_unsupported_with_typosquat_attaches_signal():
     assert exc_info.value.typosquat is not None
     assert exc_info.value.typosquat.detected is True
     assert exc_info.value.typosquat.resembles == "langchain"
+    assert exc_info.value.typosquat.kind == "typosquat"
+    assert exc_info.value.typosquat.likely_intended == ()
+
+
+def test_unsupported_with_hallucination_kind():
+    body = {
+        "supported": False,
+        "typosquat": {
+            "detected": True,
+            "kind": "hallucination",
+            "resembles": "jscodeshift",
+            "likely_intended": ["jscodeshift"],
+            "confidence": 0.9,
+            "ecosystem": "npm",
+        },
+    }
+    client = make_client([(200, body)])
+    with pytest.raises(AttestdUnsupportedProductError) as exc_info:
+        client.check("react-codeshift", "1.0.0")
+    assert exc_info.value.typosquat is not None
+    assert exc_info.value.typosquat.kind == "hallucination"
+    assert exc_info.value.typosquat.likely_intended == ("jscodeshift",)
 
 
 def test_missing_last_updated_raises_api_error():
