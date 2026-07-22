@@ -53,9 +53,14 @@ class CveSummary:
 @dataclass(frozen=True, slots=True)
 class SupplyChainSignal:
     """
-    PyPI supply chain assessment for monitored packages (independent of CVE risk_state).
+    Supply chain assessment for monitored packages (independent of CVE risk_state).
 
     Present when the product has supply-chain monitoring; see API docs for null semantics.
+
+    provenance is a tri-state npm signal:
+      True  — attestation present for this version
+      False — package has a provenance baseline but this version lacks attestation
+      None  — no baseline known (not a signal)
     """
 
     compromised: bool
@@ -65,6 +70,7 @@ class SupplyChainSignal:
     advisory_url: str | None = None
     compromised_at: datetime | None = None
     removed_at: datetime | None = None
+    provenance: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

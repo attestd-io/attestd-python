@@ -121,6 +121,26 @@ def test_supply_chain_signal_parsed():
     assert result.supply_chain.compromised is True
     assert "registry" in result.supply_chain.sources
     assert result.supply_chain.malware_type == "backdoor"
+    assert result.supply_chain.provenance is None
+
+
+def test_supply_chain_provenance_tri_state():
+    from attestd.testing import LITELLM_SAFE, MockTransport
+
+    body = {
+        **LITELLM_SAFE,
+        "product": "@mastra/core",
+        "version": "0.10.0",
+        "supply_chain": {
+            "compromised": False,
+            "sources": [],
+            "provenance": False,
+        },
+    }
+    client = Client(api_key="atst_test", transport=MockTransport(200, body))
+    result = client.check("@mastra/core", "0.10.0")
+    assert result.supply_chain is not None
+    assert result.supply_chain.provenance is False
 
 
 # ---------------------------------------------------------------------------

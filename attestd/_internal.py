@@ -220,6 +220,12 @@ def _parse_check_dict(data: dict, product: str, version: str) -> RiskResult:
                 "Unexpected response shape: supply_chain.sources expected list.",
                 status_code=200,
             )
+        provenance_raw = raw_sc.get("provenance")
+        if provenance_raw is not None and not isinstance(provenance_raw, bool):
+            raise AttestdAPIError(
+                "Unexpected response shape: supply_chain.provenance expected bool | null.",
+                status_code=200,
+            )
         supply_chain = SupplyChainSignal(
             compromised=raw_sc["compromised"],
             sources=tuple(s for s in sources_raw if isinstance(s, str)),
@@ -228,6 +234,7 @@ def _parse_check_dict(data: dict, product: str, version: str) -> RiskResult:
             advisory_url=raw_sc.get("advisory_url"),
             compromised_at=_parse_optional_iso(raw_sc.get("compromised_at")),
             removed_at=_parse_optional_iso(raw_sc.get("removed_at")),
+            provenance=provenance_raw,
         )
 
     risk_factors_raw = data.get("risk_factors") or []

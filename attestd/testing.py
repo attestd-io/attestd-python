@@ -158,6 +158,7 @@ LITELLM_COMPROMISED: dict[str, Any] = {
         "advisory_url": "https://docs.litellm.ai/blog/security-update-march-2026",
         "compromised_at": "2026-03-24T10:39:00+00:00",
         "removed_at": "2026-03-24T16:00:00+00:00",
+        "provenance": None,
     },
 }
 
