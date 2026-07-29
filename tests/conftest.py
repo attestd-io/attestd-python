@@ -38,7 +38,12 @@ def make_client(
     max_retries: int = 0,
     **kwargs: Any,
 ) -> Client:
-    """Return a Client backed by a SequentialMockTransport."""
+    """Return a Client backed by a SequentialMockTransport.
+
+    Defaults to cache_policy=\"none\" so each call exercises the transport.
+    Pass cache_policy explicitly when testing the cache layer.
+    """
+    kwargs.setdefault("cache_policy", "none")
     return Client(
         api_key="atst_test_key",
         transport=SequentialMockTransport(responses),
@@ -52,7 +57,13 @@ def make_async_client(
     max_retries: int = 0,
     **kwargs: Any,
 ) -> AsyncClient:
-    """Return an AsyncClient backed by a SequentialMockAsyncTransport."""
+    """Return an AsyncClient backed by a SequentialMockAsyncTransport.
+
+    Defaults to cache_policy=\"none\" so each call exercises the transport.
+    Pass cache_policy explicitly when testing the cache layer.
+    """
+    kwargs.setdefault("cache_policy", "none")
+    kwargs.setdefault("batch_window_ms", 0)
     return AsyncClient(
         api_key="atst_test_key",
         transport=SequentialMockAsyncTransport(responses),

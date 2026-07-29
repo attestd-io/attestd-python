@@ -45,6 +45,7 @@ Error handling::
 Full documentation: https://attestd.io/docs
 """
 
+from attestd._cache import CachePolicy, SessionStats
 from attestd._version import __version__
 from attestd.client import AsyncClient, Client
 from attestd.errors import (
@@ -85,6 +86,8 @@ __all__ = [
     "ProductsResult",
     "CveDetail",
     "UsageResult",
+    "SessionStats",
+    "CachePolicy",
     # Errors
     "AttestdError",
     "AttestdAuthError",

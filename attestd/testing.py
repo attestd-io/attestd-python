@@ -196,11 +196,19 @@ USAGE_SOLO: dict[str, Any] = {
     "tier": "solo",
     "key_calls_this_month": 1200,
     "account_calls_this_month": 1200,
-    "included_calls": 250000,
+    "included_calls": 10000,
     "billing_period_start": "2026-07-01T00:00:00+00:00",
     "billing_period_end": "2026-08-01T00:00:00+00:00",
     "overage_calls": 0,
     "estimated_overage_usd": 0.0,
+}
+
+#: Empty SessionStats snapshot for assertions against a fresh client.
+STATS_EMPTY: dict[str, int] = {
+    "api_calls_made": 0,
+    "cache_hits": 0,
+    "batch_saves": 0,
+    "calls_saved": 0,
 }
 
 

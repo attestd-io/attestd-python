@@ -40,7 +40,7 @@ def test_usage_returns_result():
     client = make_client([(200, USAGE_SOLO)])
     usage = client.usage()
     assert usage.tier == "solo"
-    assert usage.included_calls == 250000
+    assert usage.included_calls == 10000
     assert usage.key_calls_this_month == 1200
     assert usage.billing_period_start is not None
     assert usage.billing_period_end is not None
