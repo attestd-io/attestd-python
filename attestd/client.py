@@ -476,13 +476,30 @@ class AsyncClient:
         return self._cache.stats()
 
     async def aclose(self) -> None:
-        """Close the underlying async HTTP connection pool."""
-        if self._flush_task is not None and not self._flush_task.done():
-            self._flush_task.cancel()
+        """Close the HTTP pool and fail any coalesced check() waiters.
+
+        Concurrent check() calls waiting on the batch window would otherwise
+        hang if the client is closed during the coalesce sleep.
+        """
+        pending_waiters: list[asyncio.Future[RiskResult]] = []
+        flush_task: asyncio.Task[None] | None
+        async with self._pending_lock:
+            flush_task = self._flush_task
+            if flush_task is not None and not flush_task.done():
+                flush_task.cancel()
+            for waiters in self._pending.values():
+                pending_waiters.extend(waiters)
+            self._pending = {}
+            self._flush_task = None
+        if flush_task is not None:
             try:
-                await self._flush_task
+                await flush_task
             except asyncio.CancelledError:
                 pass
+        closed = AttestdError("AsyncClient closed")
+        for fut in pending_waiters:
+            if not fut.done():
+                fut.set_exception(closed)
         await self._http.aclose()
 
     # ------------------------------------------------------------------
