@@ -79,6 +79,53 @@ def test_batch_429_raises_rate_limit_error():
     assert exc_info.value.retry_after == 60
 
 
+def test_batch_omits_include_by_default():
+    from attestd.testing import SequentialMockTransport
+
+    class Recording(SequentialMockTransport):
+        def __init__(self, responses):
+            super().__init__(responses)
+            self.urls = []
+
+        def handle_request(self, request):
+            self.urls.append(str(request.url))
+            return super().handle_request(request)
+
+    transport = Recording([(200, BATCH_HAPPY)])
+    client = attestd.Client(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="none",
+    )
+    client.batch_check([("nginx", "1.25.3")])
+    assert transport.urls[0].endswith("/v1/check/batch")
+    assert "include=" not in transport.urls[0]
+
+
+def test_batch_sends_include_cves():
+    from attestd.testing import SequentialMockTransport
+
+    class Recording(SequentialMockTransport):
+        def __init__(self, responses):
+            super().__init__(responses)
+            self.urls = []
+
+        def handle_request(self, request):
+            self.urls.append(str(request.url))
+            return super().handle_request(request)
+
+    transport = Recording([(200, BATCH_HAPPY)])
+    client = attestd.Client(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="none",
+    )
+    client.batch_check([("nginx", "1.25.3")], include=["cves"])
+    assert "include=cves" in transport.urls[0]
+
+
 # ---------------------------------------------------------------------------
 # Async batch_check
 # ---------------------------------------------------------------------------

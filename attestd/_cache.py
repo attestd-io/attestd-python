@@ -17,7 +17,7 @@ from attestd.models import RiskResult
 CachePolicy = Literal["development", "runtime", "ci", "none"]
 
 # Bump when the on-disk or in-memory entry shape changes.
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 # TTL in seconds. None = never expire. 0 = always miss.
 _POLICY_TTL: dict[CachePolicy, float | None] = {
@@ -44,7 +44,11 @@ class SessionStats:
 
 class ResultCache:
     """
-    Thread-safe in-memory cache keyed by (product, version).
+    Thread-safe in-memory cache keyed by (product, version, include_cves).
+
+    Compact responses (include_cves=False) are stored separately from
+    detailed include=cves responses so a compact hit is never returned
+    for a detailed request.
 
     Policies:
         development — 24 h TTL (local loops)
@@ -61,7 +65,7 @@ class ResultCache:
             )
         self._policy = policy
         self._ttl = _POLICY_TTL[policy]
-        self._store: dict[tuple[str, str], tuple[RiskResult, float]] = {}
+        self._store: dict[tuple[str, str, bool], tuple[RiskResult, float]] = {}
         self._lock = threading.Lock()
         self._api_calls_made = 0
         self._cache_hits = 0
@@ -71,11 +75,13 @@ class ResultCache:
     def policy(self) -> CachePolicy:
         return self._policy
 
-    def get(self, product: str, version: str) -> RiskResult | None:
+    def get(
+        self, product: str, version: str, include_cves: bool = False
+    ) -> RiskResult | None:
         """Return a cached result, or None on miss / expiry / none policy."""
         if self._ttl == 0.0:
             return None
-        key = (product, version)
+        key = (product, version, include_cves)
         with self._lock:
             entry = self._store.get(key)
             if entry is None:
@@ -87,17 +93,24 @@ class ResultCache:
             self._cache_hits += 1
             return result
 
-    def put(self, product: str, version: str, result: RiskResult) -> None:
+    def put(
+        self,
+        product: str,
+        version: str,
+        result: RiskResult,
+        include_cves: bool = False,
+    ) -> None:
         """Store a result. No-op under the none policy."""
         if self._ttl == 0.0:
             return
         with self._lock:
-            self._store[(product, version)] = (result, time.monotonic())
+            self._store[(product, version, include_cves)] = (result, time.monotonic())
 
     def invalidate(self, product: str, version: str) -> None:
-        """Drop one cache entry so the next check() hits the API."""
+        """Drop compact and detailed cache entries so the next check() hits the API."""
         with self._lock:
-            self._store.pop((product, version), None)
+            self._store.pop((product, version, False), None)
+            self._store.pop((product, version, True), None)
 
     def record_api_call(self, n: int = 1) -> None:
         with self._lock:

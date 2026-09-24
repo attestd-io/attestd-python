@@ -63,6 +63,16 @@ def _resolve_api_key(api_key: str | None) -> str:
     return key
 
 
+def _want_cves(include: list[str] | tuple[str, ...] | None) -> bool:
+    """Return True when the caller opted into include=cves. Reject unknown values."""
+    if not include:
+        return False
+    unknown = [item for item in include if item != "cves"]
+    if unknown:
+        raise AttestdError(f"include accepts only 'cves'; got {unknown!r}.")
+    return True
+
+
 class Client:
     """
     Synchronous Attestd API client.
@@ -111,18 +121,26 @@ class Client:
     # Public API
     # ------------------------------------------------------------------
 
-    def check(self, product: str, version: str) -> RiskResult:
+    def check(
+        self,
+        product: str,
+        version: str,
+        *,
+        include: list[str] | None = None,
+    ) -> RiskResult:
         """
         Query Attestd for the risk state of a product version.
 
         Results are cached according to ``cache_policy``. Repeated calls for
-        the same product+version within the TTL return the cached result and
-        do not count against your API quota.
+        the same product+version+include within the TTL return the cached
+        result and do not count against your API quota.
 
         Args:
             product: Product slug, e.g. "nginx", "log4j", "openssh".
                      See https://attestd.io/docs/products for the full list.
             version: Version string, e.g. "1.20.0", "2.14.1", "9.2p1".
+            include: Optional. Pass ``["cves"]`` to request per-CVE detail
+                     (CVSS, EPSS). Default is compact: ``result.cves`` is [].
 
         Returns:
             RiskResult with the aggregated risk assessment.
@@ -133,17 +151,24 @@ class Client:
             AttestdRateLimitError:          Monthly call quota exceeded.
                 Check e.retry_after for seconds to wait before retrying.
             AttestdAPIError:                Server error after all retries.
+            AttestdError:                   Unknown include values.
         """
-        cached = self._cache.get(product, version)
+        include_cves = _want_cves(include)
+        cached = self._cache.get(product, version, include_cves)
         if cached is not None:
             return cached
-        response = self._send_with_retry(product, version)
+        response = self._send_with_retry(product, version, include_cves)
         result = parse_check_response(response, product, version)
-        self._cache.put(product, version, result)
+        self._cache.put(product, version, result, include_cves)
         self._cache.record_api_call()
         return result
 
-    def batch_check(self, items: list[tuple[str, str]]) -> list[RiskResult | None]:
+    def batch_check(
+        self,
+        items: list[tuple[str, str]],
+        *,
+        include: list[str] | None = None,
+    ) -> list[RiskResult | None]:
         """
         Check up to 100 product versions in one API call.
 
@@ -153,13 +178,14 @@ class Client:
         your quota.
 
         Cached entries are returned without an API round-trip. Only uncached
-        items are sent to the batch endpoint.
+        items are sent to the batch endpoint. Compact and detailed
+        (include=["cves"]) results are cached separately.
 
         If the batch would exceed your quota, AttestdRateLimitError is raised
         before any results are delivered and no items are billed.
 
         Raises:
-            AttestdError:          items exceeds 100.
+            AttestdError:          items exceeds 100, or unknown include values.
             AttestdAuthError:      API key is invalid or revoked.
             AttestdRateLimitError: Quota exceeded (no items are billed).
             AttestdAPIError:       Server error after all retries.
@@ -171,12 +197,13 @@ class Client:
                 f"batch_check accepts at most 100 items; got {len(items)}."
             )
 
+        include_cves = _want_cves(include)
         results: list[RiskResult | None] = [None] * len(items)
         miss_indices: list[int] = []
         miss_items: list[tuple[str, str]] = []
 
         for i, (product, version) in enumerate(items):
-            cached = self._cache.get(product, version)
+            cached = self._cache.get(product, version, include_cves)
             if cached is not None:
                 results[i] = cached
             else:
@@ -187,14 +214,14 @@ class Client:
             return results
 
         body = {"items": [{"product": p, "version": v} for p, v in miss_items]}
-        response = self._post_with_retry(body)
+        response = self._post_with_retry(body, include_cves)
         fetched = parse_batch_check_response(response, miss_items)
         self._cache.record_api_call(len(miss_items))
 
         for idx, item, result in zip(miss_indices, miss_items, fetched):
             results[idx] = result
             if result is not None:
-                self._cache.put(item[0], item[1], result)
+                self._cache.put(item[0], item[1], result, include_cves)
 
         return results
 
@@ -240,8 +267,12 @@ class Client:
     # Internal
     # ------------------------------------------------------------------
 
-    def _send_with_retry(self, product: str, version: str) -> httpx.Response:
-        params = {"product": product, "version": version}
+    def _send_with_retry(
+        self, product: str, version: str, include_cves: bool = False
+    ) -> httpx.Response:
+        params: dict[str, str] = {"product": product, "version": version}
+        if include_cves:
+            params["include"] = "cves"
         last_exc: Exception | None = None
 
         for attempt in range(self._max_retries + 1):
@@ -269,14 +300,17 @@ class Client:
 
         raise last_exc  # type: ignore[misc]
 
-    def _post_with_retry(self, body: dict) -> httpx.Response:
+    def _post_with_retry(
+        self, body: dict, include_cves: bool = False
+    ) -> httpx.Response:
         last_exc: Exception | None = None
+        params = {"include": "cves"} if include_cves else None
 
         for attempt in range(self._max_retries + 1):
             if attempt > 0:
                 time.sleep(self._retry_delay * (2 ** (attempt - 1)))
             try:
-                response = self._http.post(BATCH_PATH, json=body)
+                response = self._http.post(BATCH_PATH, json=body, params=params)
                 if response.status_code not in _RETRY_STATUS_CODES:
                     return response
                 response.read()
@@ -370,7 +404,7 @@ class AsyncClient:
             timeout=timeout,
             transport=transport,
         )
-        self._pending: dict[tuple[str, str], list[asyncio.Future[RiskResult]]] = {}
+        self._pending: dict[tuple[str, str, bool], list[asyncio.Future[RiskResult]]] = {}
         self._flush_task: asyncio.Task[None] | None = None
         self._pending_lock = asyncio.Lock()
 
@@ -378,34 +412,45 @@ class AsyncClient:
     # Public API
     # ------------------------------------------------------------------
 
-    async def check(self, product: str, version: str) -> RiskResult:
+    async def check(
+        self,
+        product: str,
+        version: str,
+        *,
+        include: list[str] | None = None,
+    ) -> RiskResult:
         """
         Async version of Client.check(). See Client.check() for full docs.
 
         Concurrent calls within ``batch_window_ms`` are coalesced into one
-        batch API request. Cached results bypass both the window and the API.
+        batch API request when they share the same include flag. Cached
+        results bypass both the window and the API. Compact and detailed
+        include=["cves"] requests are never mixed in one batch.
 
         Args:
             product: Product slug, e.g. "nginx", "log4j", "openssh".
             version: Version string, e.g. "1.20.0", "2.14.1", "9.2p1".
+            include: Optional. Pass ``["cves"]`` to request per-CVE detail.
 
         Returns:
             RiskResult with the aggregated risk assessment.
 
         Raises:
             AttestdUnsupportedProductError, AttestdAuthError,
-            AttestdRateLimitError, AttestdAPIError. See Client.check().
+            AttestdRateLimitError, AttestdAPIError, AttestdError.
+            See Client.check().
         """
-        cached = self._cache.get(product, version)
+        include_cves = _want_cves(include)
+        cached = self._cache.get(product, version, include_cves)
         if cached is not None:
             return cached
 
         if self._batch_window_ms == 0:
-            return await self._check_direct(product, version)
+            return await self._check_direct(product, version, include_cves)
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[RiskResult] = loop.create_future()
-        key = (product, version)
+        key = (product, version, include_cves)
 
         async with self._pending_lock:
             waiters = self._pending.setdefault(key, [])
@@ -415,7 +460,12 @@ class AsyncClient:
 
         return await future
 
-    async def batch_check(self, items: list[tuple[str, str]]) -> list[RiskResult | None]:
+    async def batch_check(
+        self,
+        items: list[tuple[str, str]],
+        *,
+        include: list[str] | None = None,
+    ) -> list[RiskResult | None]:
         """Async version of Client.batch_check(). See Client.batch_check() for full docs."""
         if not items:
             return []
@@ -424,12 +474,13 @@ class AsyncClient:
                 f"batch_check accepts at most 100 items; got {len(items)}."
             )
 
+        include_cves = _want_cves(include)
         results: list[RiskResult | None] = [None] * len(items)
         miss_indices: list[int] = []
         miss_items: list[tuple[str, str]] = []
 
         for i, (product, version) in enumerate(items):
-            cached = self._cache.get(product, version)
+            cached = self._cache.get(product, version, include_cves)
             if cached is not None:
                 results[i] = cached
             else:
@@ -440,14 +491,14 @@ class AsyncClient:
             return results
 
         body = {"items": [{"product": p, "version": v} for p, v in miss_items]}
-        response = await self._post_with_retry(body)
+        response = await self._post_with_retry(body, include_cves)
         fetched = parse_batch_check_response(response, miss_items)
         self._cache.record_api_call(len(miss_items))
 
         for idx, item, result in zip(miss_indices, miss_items, fetched):
             results[idx] = result
             if result is not None:
-                self._cache.put(item[0], item[1], result)
+                self._cache.put(item[0], item[1], result, include_cves)
 
         return results
 
@@ -499,10 +550,12 @@ class AsyncClient:
     # Internal
     # ------------------------------------------------------------------
 
-    async def _check_direct(self, product: str, version: str) -> RiskResult:
-        response = await self._send_with_retry(product, version)
+    async def _check_direct(
+        self, product: str, version: str, include_cves: bool = False
+    ) -> RiskResult:
+        response = await self._send_with_retry(product, version, include_cves)
         result = parse_check_response(response, product, version)
-        self._cache.put(product, version, result)
+        self._cache.put(product, version, result, include_cves)
         self._cache.record_api_call()
         return result
 
@@ -517,43 +570,19 @@ class AsyncClient:
         if not pending:
             return
 
-        items = list(pending.keys())
-        all_results: dict[tuple[str, str], RiskResult | BaseException] = {}
+        compact = {k: v for k, v in pending.items() if not k[2]}
+        detailed = {k: v for k, v in pending.items() if k[2]}
+        all_results: dict[tuple[str, str, bool], RiskResult | BaseException] = {}
 
-        try:
-            # Single unique key: use GET /v1/check (no batch savings).
-            # Multiple keys: coalesce into POST /v1/check/batch.
-            if len(items) == 1:
-                key = items[0]
-                try:
-                    all_results[key] = await self._check_direct(key[0], key[1])
-                except BaseException as exc:
+        for include_cves, group in ((False, compact), (True, detailed)):
+            if not group:
+                continue
+            items = list(group.keys())
+            try:
+                await self._flush_group(items, include_cves, all_results)
+            except BaseException as exc:
+                for key in items:
                     all_results[key] = exc
-            else:
-                for offset in range(0, len(items), 100):
-                    chunk = items[offset : offset + 100]
-                    body = {
-                        "items": [{"product": p, "version": v} for p, v in chunk]
-                    }
-                    response = await self._post_with_retry(body)
-                    fetched = parse_batch_check_response(response, chunk)
-                    self._cache.record_api_call(len(chunk))
-                    if len(chunk) > 1:
-                        self._cache.record_batch_save(len(chunk) - 1)
-                    for key, result in zip(chunk, fetched):
-                        if result is None:
-                            all_results[key] = AttestdUnsupportedProductError(
-                                key[0], key[1]
-                            )
-                        else:
-                            self._cache.put(key[0], key[1], result)
-                            all_results[key] = result
-        except BaseException as exc:
-            for waiters in pending.values():
-                for fut in waiters:
-                    if not fut.done():
-                        fut.set_exception(exc)
-            return
 
         for key, waiters in pending.items():
             outcome = all_results[key]
@@ -565,8 +594,48 @@ class AsyncClient:
                 else:
                     fut.set_result(outcome)
 
-    async def _send_with_retry(self, product: str, version: str) -> httpx.Response:
-        params = {"product": product, "version": version}
+    async def _flush_group(
+        self,
+        items: list[tuple[str, str, bool]],
+        include_cves: bool,
+        all_results: dict[tuple[str, str, bool], RiskResult | BaseException],
+    ) -> None:
+        # Single unique key: use GET /v1/check (no batch savings).
+        # Multiple keys: coalesce into POST /v1/check/batch.
+        if len(items) == 1:
+            key = items[0]
+            try:
+                all_results[key] = await self._check_direct(
+                    key[0], key[1], include_cves
+                )
+            except BaseException as exc:
+                all_results[key] = exc
+            return
+
+        for offset in range(0, len(items), 100):
+            chunk = items[offset : offset + 100]
+            pairs = [(p, v) for p, v, _ in chunk]
+            body = {"items": [{"product": p, "version": v} for p, v in pairs]}
+            response = await self._post_with_retry(body, include_cves)
+            fetched = parse_batch_check_response(response, pairs)
+            self._cache.record_api_call(len(chunk))
+            if len(chunk) > 1:
+                self._cache.record_batch_save(len(chunk) - 1)
+            for key, result in zip(chunk, fetched):
+                if result is None:
+                    all_results[key] = AttestdUnsupportedProductError(
+                        key[0], key[1]
+                    )
+                else:
+                    self._cache.put(key[0], key[1], result, include_cves)
+                    all_results[key] = result
+
+    async def _send_with_retry(
+        self, product: str, version: str, include_cves: bool = False
+    ) -> httpx.Response:
+        params: dict[str, str] = {"product": product, "version": version}
+        if include_cves:
+            params["include"] = "cves"
         last_exc: Exception | None = None
 
         for attempt in range(self._max_retries + 1):
@@ -594,14 +663,19 @@ class AsyncClient:
 
         raise last_exc  # type: ignore[misc]
 
-    async def _post_with_retry(self, body: dict) -> httpx.Response:
+    async def _post_with_retry(
+        self, body: dict, include_cves: bool = False
+    ) -> httpx.Response:
         last_exc: Exception | None = None
+        params = {"include": "cves"} if include_cves else None
 
         for attempt in range(self._max_retries + 1):
             if attempt > 0:
                 await asyncio.sleep(self._retry_delay * (2 ** (attempt - 1)))
             try:
-                response = await self._http.post(BATCH_PATH, json=body)
+                response = await self._http.post(
+                    BATCH_PATH, json=body, params=params
+                )
                 if response.status_code not in _RETRY_STATUS_CODES:
                     return response
                 await response.aread()
