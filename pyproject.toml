@@ -35,8 +35,8 @@ packages = ["attestd"]
 [project.urls]
 Homepage   = "https://attestd.io"
 Docs       = "https://attestd.io/docs"
-Repository = "https://github.com/attestd/attestd-python"
-"Bug Tracker" = "https://github.com/attestd/attestd-python/issues"
+Repository = "https://github.com/attestd-io/attestd-python"
+"Bug Tracker" = "https://github.com/attestd-io/attestd-python/issues"
 
 [project.optional-dependencies]
 dev = [
