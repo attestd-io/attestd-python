@@ -13,6 +13,7 @@ from attestd import Client
 from attestd.errors import (
     AttestdAPIError,
     AttestdAuthError,
+    AttestdError,
     AttestdRateLimitError,
     AttestdUnsupportedProductError,
 )
@@ -23,6 +24,17 @@ from tests.conftest import (
     UNSUPPORTED_BODY,
     make_client,
 )
+from attestd.testing import SequentialMockTransport
+
+
+class _RecordingTransport(SequentialMockTransport):
+    def __init__(self, responses: list[tuple]) -> None:
+        super().__init__(responses)
+        self.urls: list[str] = []
+
+    def handle_request(self, request):  # type: ignore[no-untyped-def]
+        self.urls.append(str(request.url))
+        return super().handle_request(request)
 
 
 # ---------------------------------------------------------------------------
@@ -358,3 +370,82 @@ def test_top_level_exports():
     assert hasattr(attestd, "AttestdUnsupportedProductError")
     assert hasattr(attestd, "AttestdAPIError")
     assert hasattr(attestd, "__version__")
+
+
+# ---------------------------------------------------------------------------
+# include=cves
+# ---------------------------------------------------------------------------
+
+def test_check_omits_include_by_default():
+    transport = _RecordingTransport([(200, SUPPORTED_NGINX_BODY)])
+    client = Client(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="none",
+    )
+    client.check("nginx", "1.20.0")
+    assert "include=" not in transport.urls[0]
+
+
+def test_check_sends_include_cves():
+    body = {
+        **LOG4J_CRITICAL_BODY,
+        "cves": [
+            {
+                "cve_id": "CVE-2021-44228",
+                "cvss_score": 10.0,
+                "actively_exploited": True,
+                "remote_exploitable": True,
+                "epss_score": 0.9401,
+                "epss_percentile": 0.99,
+            }
+        ],
+    }
+    transport = _RecordingTransport([(200, body)])
+    client = Client(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="none",
+    )
+    result = client.check("log4j", "2.14.1", include=["cves"])
+    assert "include=cves" in transport.urls[0]
+    assert len(result.cves) == 1
+    assert result.cves[0].cve_id == "CVE-2021-44228"
+
+
+def test_check_unknown_include_raises():
+    client = make_client([])
+    with pytest.raises(AttestdError, match="include accepts only"):
+        client.check("nginx", "1.20.0", include=["epss"])
+
+
+def test_compact_cache_is_not_returned_for_include_cves():
+    detailed = {
+        **SUPPORTED_NGINX_BODY,
+        "cves": [
+            {
+                "cve_id": "CVE-2021-23017",
+                "cvss_score": 7.7,
+                "actively_exploited": False,
+                "remote_exploitable": True,
+                "epss_score": 0.12,
+                "epss_percentile": 0.8,
+            }
+        ],
+    }
+    transport = _RecordingTransport(
+        [(200, SUPPORTED_NGINX_BODY), (200, detailed)]
+    )
+    client = Client(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="runtime",
+    )
+    compact = client.check("nginx", "1.20.0")
+    with_cves = client.check("nginx", "1.20.0", include=["cves"])
+    assert compact.cves == []
+    assert len(with_cves.cves) == 1
+    assert transport.call_count == 2

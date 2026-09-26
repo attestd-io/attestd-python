@@ -44,6 +44,21 @@ Async:
 results = await client.batch_check([("litellm", "1.82.7"), ("nginx", "1.25.3")])
 ```
 
+## Per-CVE detail
+
+Default `check` / `batch_check` omit `include` and return compact results (`cves` is `[]`). Pass `include=["cves"]` to request CVSS and EPSS per CVE. Compact and detailed responses are cached separately.
+
+```python
+detailed = client.check("nginx", "1.20.0", include=["cves"])
+print(detailed.cves[0].cvss_score)
+print(detailed.cves[0].epss_score)
+
+batch = client.batch_check(
+    [("nginx", "1.20.0")],
+    include=["cves"],
+)
+```
+
 ## Catalog and quota
 
 Three additional endpoints for product discovery, CVE lookup, and quota monitoring. All require a valid API key.
@@ -227,8 +242,7 @@ except attestd.AttestdUnsupportedProductError as e:
 | `confidence` | `float` | Synthesis confidence (0.0-1.0) |
 | `cve_ids` | `list[str]` | CVE IDs in this assessment |
 | `max_epss` | `float \| None` | Highest EPSS probability across matching CVEs |
-| `cves` | `list[CveSummary]` | Per-CVE detail when the API includes it |
-| `last_updated` | `datetime` | UTC timestamp of last synthesis run |
+| `cves` | `list[CveSummary]` | Per-CVE detail when `include=["cves"]` was passed; otherwise `[]` || `last_updated` | `datetime` | UTC timestamp of last synthesis run |
 | `supply_chain` | `SupplyChainSignal \| None` | PyPI/npm supply chain signal when monitored; `None` for CVE-only products |
 | `typosquat` | `TyposquatSignal \| None` | Present when the package name resembles a known product |
 

@@ -174,6 +174,59 @@ def test_exports():
     assert attestd.__version__ == "0.7.0"
 
 
+def test_compact_and_detailed_cache_entries_do_not_mix():
+    from datetime import datetime, timezone
+
+    from attestd.models import CveSummary, RiskResult
+
+    cache = ResultCache("ci")
+    compact = RiskResult(
+        product="nginx",
+        version="1.20.0",
+        risk_state="high",
+        risk_factors=[],
+        actively_exploited=False,
+        remote_exploitable=True,
+        authentication_required=False,
+        patch_available=True,
+        fixed_version="1.27.4",
+        confidence=0.85,
+        cve_ids=["CVE-2021-23017"],
+        last_updated=datetime(2024, 6, 1, 12, tzinfo=timezone.utc),
+    )
+    detailed = RiskResult(
+        product="nginx",
+        version="1.20.0",
+        risk_state="high",
+        risk_factors=[],
+        actively_exploited=False,
+        remote_exploitable=True,
+        authentication_required=False,
+        patch_available=True,
+        fixed_version="1.27.4",
+        confidence=0.85,
+        cve_ids=["CVE-2021-23017"],
+        cves=[
+            CveSummary(
+                cve_id="CVE-2021-23017",
+                cvss_score=7.7,
+                actively_exploited=False,
+                remote_exploitable=True,
+                epss_score=0.12,
+                epss_percentile=0.8,
+            )
+        ],
+        last_updated=datetime(2024, 6, 1, 12, tzinfo=timezone.utc),
+    )
+    cache.put("nginx", "1.20.0", compact)
+    cache.put("nginx", "1.20.0", detailed, include_cves=True)
+    assert cache.get("nginx", "1.20.0") is not None
+    assert cache.get("nginx", "1.20.0").cves == []
+    hit = cache.get("nginx", "1.20.0", include_cves=True)
+    assert hit is not None
+    assert len(hit.cves) == 1
+
+
 @pytest.mark.asyncio
 async def test_async_batch_coalescing():
     """Three concurrent check() calls coalesce into one batch request."""
@@ -233,4 +286,40 @@ async def test_async_cache_hit_skips_batch():
     assert first.risk_state == second.risk_state == "high"
     assert transport.call_count == 1
     assert client.stats().cache_hits == 1
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_does_not_coalesce_compact_with_detailed():
+    detailed_body = {
+        **NGINX_VULNERABLE,
+        "cves": [
+            {
+                "cve_id": "CVE-2021-23017",
+                "cvss_score": 7.7,
+                "actively_exploited": False,
+                "remote_exploitable": True,
+                "epss_score": 0.12,
+                "epss_percentile": 0.8,
+            }
+        ],
+    }
+    transport = SequentialMockAsyncTransport(
+        [(200, NGINX_VULNERABLE), (200, detailed_body)]
+    )
+    client = attestd.AsyncClient(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="none",
+        batch_window_ms=5,
+    )
+    compact, detailed = await asyncio.gather(
+        client.check("nginx", "1.20.0"),
+        client.check("nginx", "1.20.0", include=["cves"]),
+    )
+    assert compact.cves == []
+    assert len(detailed.cves) == 1
+    assert detailed.cves[0].cve_id == "CVE-2021-23017"
+    assert transport.call_count == 2
     await client.aclose()
