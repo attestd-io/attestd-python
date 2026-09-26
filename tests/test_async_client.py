@@ -8,12 +8,15 @@ most tests, or the success case terminates the retry loop early).
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from attestd import AsyncClient
 from attestd.errors import (
     AttestdAPIError,
     AttestdAuthError,
+    AttestdError,
     AttestdRateLimitError,
     AttestdUnsupportedProductError,
 )
@@ -172,3 +175,24 @@ async def test_aclose_is_idempotent():
     await client.aclose()
     # No exception raised
     assert result.product == "nginx"
+
+
+async def test_aclose_fails_pending_coalesced_checks():
+    """Closing during the coalesce window must not leave check() waiters hung."""
+    from attestd.testing import MockAsyncTransport, NGINX_VULNERABLE
+
+    client = AsyncClient(
+        api_key="atst_test",
+        transport=MockAsyncTransport(200, NGINX_VULNERABLE),
+        cache_policy="none",
+        batch_window_ms=5_000,
+    )
+    pending = asyncio.create_task(client.check("nginx", "1.20.0"))
+    for _ in range(20):
+        await asyncio.sleep(0)
+        if client._flush_task is not None:
+            break
+    assert not pending.done()
+    await client.aclose()
+    with pytest.raises(AttestdError, match="AsyncClient closed"):
+        await pending

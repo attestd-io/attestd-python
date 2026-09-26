@@ -242,12 +242,13 @@ except attestd.AttestdUnsupportedProductError as e:
 | `confidence` | `float` | Synthesis confidence (0.0-1.0) |
 | `cve_ids` | `list[str]` | CVE IDs in this assessment |
 | `max_epss` | `float \| None` | Highest EPSS probability across matching CVEs |
-| `cves` | `list[CveSummary]` | Per-CVE detail when `include=["cves"]` was passed; otherwise `[]` |
-| `last_updated` | `datetime` | UTC timestamp of last synthesis run |
+| `cves` | `list[CveSummary]` | Per-CVE detail when `include=["cves"]` was passed; otherwise `[]` || `last_updated` | `datetime` | UTC timestamp of last synthesis run |
 | `supply_chain` | `SupplyChainSignal \| None` | PyPI/npm supply chain signal when monitored; `None` for CVE-only products |
 | `typosquat` | `TyposquatSignal \| None` | Present when the package name resembles a known product |
 
-**TyposquatSignal:** `detected`, `resembles`, `confidence`, `ecosystem`
+**TyposquatSignal:** `detected`, `resembles`, `confidence`, `ecosystem`, `kind`, `likely_intended`
+
+**CveSummary:** `cve_id`, `cvss_score`, `actively_exploited`, `remote_exploitable`, `epss_score`, `epss_percentile`
 
 ### Risk states
 
@@ -276,6 +277,7 @@ except attestd.AttestdUnsupportedProductError as e:
 | `ProductEntry` | `slug`, `display_name` |
 | `SupplyChainEntry` | `package`, `ecosystem`, `display_name` |
 | `ProductsResult` | `cve_products`, `supply_chain_packages`, `total` |
+| `CveSummary` | `cve_id`, `cvss_score`, `actively_exploited`, `remote_exploitable`, `epss_score`, `epss_percentile` |
 | `CveDetail` | `cve_id`, `description`, `cvss_score`, `cvss_vector`, `actively_exploited`, `remote_exploitable`, `authentication_required`, `affected_products`, `epss_score`, `epss_percentile`, `source_published_at`, `last_checked_at` |
 | `UsageResult` | `tier`, `key_calls_this_month`, `account_calls_this_month`, `included_calls`, `billing_period_start`, `billing_period_end`, `overage_calls`, `estimated_overage_usd` |
 
@@ -288,8 +290,15 @@ client = attestd.Client(
     timeout=10.0,
     max_retries=3,
     retry_delay=1.0,
+    cache_policy="runtime",
 )
+print(client.stats())
+client.invalidate_cache("nginx", "1.20.0")
 ```
+
+`cache_policy` is one of `development`, `runtime`, `ci`, or `none`. Default is `runtime`. `stats()` returns session counters (`api_calls_made`, `cache_hits`, `batch_saves`, `calls_saved`). `invalidate_cache(product, version)` drops one cached result.
+
+`AsyncClient` accepts the same options plus `batch_window_ms` (default `5`). Concurrent `check()` calls within that window are coalesced into one batch request. Set `batch_window_ms=0` to disable coalescing.
 
 Set `ATTESTD_API_KEY` in your environment from the [portal](https://api.attestd.io/portal/login). Then omit `api_key` in the constructor:
 
@@ -298,7 +307,7 @@ with attestd.Client() as client:
     result = client.check("nginx", "1.20.0")
 ```
 
-The SDK retries on transient 5xx responses and connection failures with exponential backoff (1s, 2s, 4s between attempts). `401` and `429` are surfaced immediately without retry.
+The SDK retries on transient 5xx responses and connection failures with exponential backoff (1s, 2s, 4s between attempts). Timeouts raise immediately and are not retried. `401` and `429` are surfaced immediately without retry.
 
 ## Supported products
 
@@ -324,6 +333,7 @@ from attestd.testing import (
     PRODUCTS_RESPONSE,
     CVE_LOG4SHELL,
     USAGE_SOLO,
+    STATS_EMPTY,
 )
 ```
 
