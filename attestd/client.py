@@ -242,7 +242,7 @@ class Client:
         return parse_usage_response(response)
 
     def invalidate_cache(self, product: str, version: str) -> None:
-        """Drop a cached result so the next check() hits the API."""
+        """Drop compact and detailed cached results so the next check() hits the API."""
         self._cache.invalidate(product, version)
 
     def stats(self) -> SessionStats:
@@ -519,7 +519,7 @@ class AsyncClient:
         return parse_usage_response(response)
 
     def invalidate_cache(self, product: str, version: str) -> None:
-        """Drop a cached result so the next check() hits the API."""
+        """Drop compact and detailed cached results so the next check() hits the API."""
         self._cache.invalidate(product, version)
 
     def stats(self) -> SessionStats:

@@ -139,6 +139,57 @@ def test_invalidate_cache_forces_refetch():
     assert client.stats().cache_hits == 0
 
 
+def test_invalidate_cache_drops_compact_and_detailed_entries():
+    from datetime import datetime, timezone
+
+    from attestd.models import CveSummary, RiskResult
+
+    cache = ResultCache("ci")
+    compact = RiskResult(
+        product="nginx",
+        version="1.20.0",
+        risk_state="high",
+        risk_factors=[],
+        actively_exploited=False,
+        remote_exploitable=True,
+        authentication_required=False,
+        patch_available=True,
+        fixed_version="1.27.4",
+        confidence=0.85,
+        cve_ids=["CVE-2021-23017"],
+        last_updated=datetime(2024, 6, 1, 12, tzinfo=timezone.utc),
+    )
+    detailed = RiskResult(
+        product="nginx",
+        version="1.20.0",
+        risk_state="high",
+        risk_factors=[],
+        actively_exploited=False,
+        remote_exploitable=True,
+        authentication_required=False,
+        patch_available=True,
+        fixed_version="1.27.4",
+        confidence=0.85,
+        cve_ids=["CVE-2021-23017"],
+        cves=[
+            CveSummary(
+                cve_id="CVE-2021-23017",
+                cvss_score=7.7,
+                actively_exploited=False,
+                remote_exploitable=True,
+                epss_score=0.12,
+                epss_percentile=0.8,
+            )
+        ],
+        last_updated=datetime(2024, 6, 1, 12, tzinfo=timezone.utc),
+    )
+    cache.put("nginx", "1.20.0", compact)
+    cache.put("nginx", "1.20.0", detailed, include_cves=True)
+    cache.invalidate("nginx", "1.20.0")
+    assert cache.get("nginx", "1.20.0") is None
+    assert cache.get("nginx", "1.20.0", include_cves=True) is None
+
+
 def test_stats_calls_saved():
     client = make_client(
         [(200, NGINX_VULNERABLE)],

@@ -242,7 +242,8 @@ except attestd.AttestdUnsupportedProductError as e:
 | `confidence` | `float` | Synthesis confidence (0.0-1.0) |
 | `cve_ids` | `list[str]` | CVE IDs in this assessment |
 | `max_epss` | `float \| None` | Highest EPSS probability across matching CVEs |
-| `cves` | `list[CveSummary]` | Per-CVE detail when `include=["cves"]` was passed; otherwise `[]` || `last_updated` | `datetime` | UTC timestamp of last synthesis run |
+| `cves` | `list[CveSummary]` | Per-CVE detail when `include=["cves"]` was passed; otherwise `[]` |
+| `last_updated` | `datetime` | UTC timestamp of last synthesis run |
 | `supply_chain` | `SupplyChainSignal \| None` | PyPI/npm supply chain signal when monitored; `None` for CVE-only products |
 | `typosquat` | `TyposquatSignal \| None` | Present when the package name resembles a known product |
 
@@ -296,7 +297,7 @@ print(client.stats())
 client.invalidate_cache("nginx", "1.20.0")
 ```
 
-`cache_policy` is one of `development`, `runtime`, `ci`, or `none`. Default is `runtime`. `stats()` returns session counters (`api_calls_made`, `cache_hits`, `batch_saves`, `calls_saved`). `invalidate_cache(product, version)` drops one cached result.
+`cache_policy` is one of `development`, `runtime`, `ci`, or `none`. Default is `runtime`. `stats()` returns session counters (`api_calls_made`, `cache_hits`, `batch_saves`, `calls_saved`). `invalidate_cache(product, version)` drops both the compact and detailed (`include=["cves"]`) cached results for that product and version.
 
 `AsyncClient` accepts the same options plus `batch_window_ms` (default `5`). Concurrent `check()` calls within that window are coalesced into one batch request. Set `batch_window_ms=0` to disable coalescing.
 
