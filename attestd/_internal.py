@@ -385,7 +385,8 @@ def parse_batch_check_response(
     Raises:
         AttestdAuthError: HTTP 401.
         AttestdRateLimitError: HTTP 429. No items are billed when this fires.
-        AttestdAPIError: Any other non-200 response or malformed body.
+        AttestdAPIError: Any other non-200 response, malformed body, or a
+            results list whose length does not match the request.
     """
     if response.status_code == 401:
         raise AttestdAuthError(
@@ -436,6 +437,13 @@ def parse_batch_check_response(
     if not isinstance(results_raw, list):
         raise AttestdAPIError(
             "Unexpected batch response shape: missing 'results' list.",
+            status_code=200,
+        )
+
+    if len(results_raw) != len(items):
+        raise AttestdAPIError(
+            "Unexpected batch response shape: "
+            f"expected {len(items)} results, got {len(results_raw)}.",
             status_code=200,
         )
 

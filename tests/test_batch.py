@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 import attestd
-from attestd.errors import AttestdError, AttestdRateLimitError
+from attestd.errors import AttestdAPIError, AttestdError, AttestdRateLimitError
 
 from tests.conftest import (
     LOG4J_CRITICAL_BODY,
@@ -60,6 +60,58 @@ def test_batch_mixed_supported_unsupported():
     assert results[1] is None
 
 
+def test_batch_short_results_raises():
+    client = make_client(
+        [
+            (
+                200,
+                {
+                    "results": [
+                        {
+                            "product": "nginx",
+                            "version": "1.25.3",
+                            "result": SUPPORTED_NGINX_BODY,
+                        }
+                    ]
+                },
+            )
+        ]
+    )
+    with pytest.raises(AttestdAPIError, match="expected 2 results, got 1"):
+        client.batch_check([("nginx", "1.25.3"), ("log4j", "2.14.1")])
+
+
+def test_batch_extra_results_raises():
+    client = make_client(
+        [
+            (
+                200,
+                {
+                    "results": [
+                        {
+                            "product": "nginx",
+                            "version": "1.25.3",
+                            "result": SUPPORTED_NGINX_BODY,
+                        },
+                        {
+                            "product": "log4j",
+                            "version": "2.14.1",
+                            "result": LOG4J_CRITICAL_BODY,
+                        },
+                        {
+                            "product": "redis",
+                            "version": "7.0.0",
+                            "result": SUPPORTED_NGINX_BODY,
+                        },
+                    ]
+                },
+            )
+        ]
+    )
+    with pytest.raises(AttestdAPIError, match="expected 2 results, got 3"):
+        client.batch_check([("nginx", "1.25.3"), ("log4j", "2.14.1")])
+
+
 def test_batch_empty_list():
     client = make_client([])
     assert client.batch_check([]) == []
@@ -98,7 +150,7 @@ def test_batch_omits_include_by_default():
         max_retries=0,
         cache_policy="none",
     )
-    client.batch_check([("nginx", "1.25.3")])
+    client.batch_check([("nginx", "1.25.3"), ("log4j", "2.14.1")])
     assert transport.urls[0].endswith("/v1/check/batch")
     assert "include=" not in transport.urls[0]
 
@@ -122,7 +174,10 @@ def test_batch_sends_include_cves():
         max_retries=0,
         cache_policy="none",
     )
-    client.batch_check([("nginx", "1.25.3")], include=["cves"])
+    client.batch_check(
+        [("nginx", "1.25.3"), ("log4j", "2.14.1")],
+        include=["cves"],
+    )
     assert "include=cves" in transport.urls[0]
 
 
