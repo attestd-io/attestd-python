@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 import attestd
-from attestd.errors import AttestdError, AttestdRateLimitError
+from attestd.errors import AttestdAPIError, AttestdError, AttestdRateLimitError
 
 from tests.conftest import (
     LOG4J_CRITICAL_BODY,
@@ -58,6 +58,58 @@ def test_batch_mixed_supported_unsupported():
     assert results[0] is not None
     assert results[0].product == "nginx"
     assert results[1] is None
+
+
+def test_batch_short_results_raises():
+    client = make_client(
+        [
+            (
+                200,
+                {
+                    "results": [
+                        {
+                            "product": "nginx",
+                            "version": "1.25.3",
+                            "result": SUPPORTED_NGINX_BODY,
+                        }
+                    ]
+                },
+            )
+        ]
+    )
+    with pytest.raises(AttestdAPIError, match="expected 2 results, got 1"):
+        client.batch_check([("nginx", "1.25.3"), ("log4j", "2.14.1")])
+
+
+def test_batch_extra_results_raises():
+    client = make_client(
+        [
+            (
+                200,
+                {
+                    "results": [
+                        {
+                            "product": "nginx",
+                            "version": "1.25.3",
+                            "result": SUPPORTED_NGINX_BODY,
+                        },
+                        {
+                            "product": "log4j",
+                            "version": "2.14.1",
+                            "result": LOG4J_CRITICAL_BODY,
+                        },
+                        {
+                            "product": "redis",
+                            "version": "7.0.0",
+                            "result": SUPPORTED_NGINX_BODY,
+                        },
+                    ]
+                },
+            )
+        ]
+    )
+    with pytest.raises(AttestdAPIError, match="expected 2 results, got 3"):
+        client.batch_check([("nginx", "1.25.3"), ("log4j", "2.14.1")])
 
 
 def test_batch_empty_list():
