@@ -150,7 +150,7 @@ def test_batch_omits_include_by_default():
         max_retries=0,
         cache_policy="none",
     )
-    client.batch_check([("nginx", "1.25.3")])
+    client.batch_check([("nginx", "1.25.3"), ("log4j", "2.14.1")])
     assert transport.urls[0].endswith("/v1/check/batch")
     assert "include=" not in transport.urls[0]
 
@@ -174,7 +174,10 @@ def test_batch_sends_include_cves():
         max_retries=0,
         cache_policy="none",
     )
-    client.batch_check([("nginx", "1.25.3")], include=["cves"])
+    client.batch_check(
+        [("nginx", "1.25.3"), ("log4j", "2.14.1")],
+        include=["cves"],
+    )
     assert "include=cves" in transport.urls[0]
 
 
