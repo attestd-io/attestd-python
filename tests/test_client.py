@@ -421,6 +421,29 @@ def test_check_unknown_include_raises():
         client.check("nginx", "1.20.0", include=["epss"])
 
 
+def test_check_trims_product_and_version():
+    transport = _RecordingTransport([(200, SUPPORTED_NGINX_BODY)])
+    client = Client(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="none",
+    )
+    client.check(" nginx ", " 1.20.0 ")
+    assert "product=nginx" in transport.urls[0]
+    assert "version=1.20.0" in transport.urls[0]
+    assert "nginx+" not in transport.urls[0]
+    assert "%20" not in transport.urls[0]
+
+
+def test_check_whitespace_only_raises_without_request():
+    client = make_client([])
+    with pytest.raises(AttestdError, match="product and version are required"):
+        client.check("   ", "1.20.0")
+    with pytest.raises(AttestdError, match="product and version are required"):
+        client.check("nginx", "  ")
+
+
 def test_compact_cache_is_not_returned_for_include_cves():
     detailed = {
         **SUPPORTED_NGINX_BODY,

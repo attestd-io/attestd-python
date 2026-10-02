@@ -6,6 +6,8 @@ Uses SequentialMockTransport via conftest helpers — no real network calls.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 import attestd
@@ -124,6 +126,39 @@ def test_batch_over_limit_raises():
         client.batch_check(items)
 
 
+def test_batch_trims_product_and_version():
+    from attestd.testing import SequentialMockTransport
+
+    class Recording(SequentialMockTransport):
+        def __init__(self, responses):
+            super().__init__(responses)
+            self.bodies = []
+
+        def handle_request(self, request):
+            self.bodies.append(request.content)
+            return super().handle_request(request)
+
+    transport = Recording([(200, BATCH_HAPPY)])
+    client = attestd.Client(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="none",
+    )
+    client.batch_check([(" nginx ", " 1.25.3 "), (" log4j ", " 2.14.1 ")])
+    payload = json.loads(transport.bodies[0])
+    assert payload["items"] == [
+        {"product": "nginx", "version": "1.25.3"},
+        {"product": "log4j", "version": "2.14.1"},
+    ]
+
+
+def test_batch_whitespace_only_item_raises_without_request():
+    client = make_client([])
+    with pytest.raises(AttestdError, match="product and version are required"):
+        client.batch_check([("nginx", "1.25.3"), ("  ", "1.0.0")])
+
+
 def test_batch_429_raises_rate_limit_error():
     client = make_client([(429, {}, {"Retry-After": "60"})])
     with pytest.raises(AttestdRateLimitError) as exc_info:
@@ -209,6 +244,13 @@ async def test_async_batch_mixed_supported_unsupported():
 async def test_async_batch_empty_list():
     client = make_async_client([])
     assert await client.batch_check([]) == []
+
+
+@pytest.mark.asyncio
+async def test_async_batch_whitespace_only_item_raises_without_request():
+    client = make_async_client([])
+    with pytest.raises(AttestdError, match="product and version are required"):
+        await client.batch_check([("nginx", "1.25.3"), ("  ", "1.0.0")])
 
 
 @pytest.mark.asyncio
