@@ -168,6 +168,14 @@ async def test_async_context_manager():
     assert result.risk_state == "high"
 
 
+async def test_check_whitespace_only_raises_without_request():
+    async with make_async_client([]) as client:
+        with pytest.raises(AttestdError, match="product and version are required"):
+            await client.check("   ", "1.20.0")
+        with pytest.raises(AttestdError, match="product and version are required"):
+            await client.check("nginx", "  ")
+
+
 async def test_aclose_is_idempotent():
     """aclose() can be called explicitly without double-closing on __aexit__."""
     client = make_async_client([(200, SUPPORTED_NGINX_BODY)])

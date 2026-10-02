@@ -73,6 +73,15 @@ def _want_cves(include: list[str] | tuple[str, ...] | None) -> bool:
     return True
 
 
+def _normalize_check_args(product: str, version: str) -> tuple[str, str]:
+    """Strip product/version. Reject empty values before they hit GET /v1/check."""
+    product = product.strip()
+    version = version.strip()
+    if not product or not version:
+        raise AttestdError("product and version are required.")
+    return product, version
+
+
 class Client:
     """
     Synchronous Attestd API client.
@@ -137,8 +146,10 @@ class Client:
 
         Args:
             product: Product slug, e.g. "nginx", "log4j", "openssh".
+                     Leading and trailing whitespace is stripped.
                      See https://attestd.io/docs/products for the full list.
             version: Version string, e.g. "1.20.0", "2.14.1", "9.2p1".
+                     Leading and trailing whitespace is stripped.
             include: Optional. Pass ``["cves"]`` to request per-CVE detail
                      (CVSS, EPSS). Default is compact: ``result.cves`` is [].
 
@@ -151,9 +162,11 @@ class Client:
             AttestdRateLimitError:          Monthly call quota exceeded.
                 Check e.retry_after for seconds to wait before retrying.
             AttestdAPIError:                Server error after all retries.
-            AttestdError:                   Unknown include values.
+            AttestdError:                   Unknown include values, or empty
+                product/version after stripping whitespace.
         """
         include_cves = _want_cves(include)
+        product, version = _normalize_check_args(product, version)
         cached = self._cache.get(product, version, include_cves)
         if cached is not None:
             return cached
@@ -185,7 +198,8 @@ class Client:
         before any results are delivered and no items are billed.
 
         Raises:
-            AttestdError:          items exceeds 100, or unknown include values.
+            AttestdError:          items exceeds 100, unknown include values, or
+                an item with empty product/version after stripping whitespace.
             AttestdAuthError:      API key is invalid or revoked.
             AttestdRateLimitError: Quota exceeded (no items are billed).
             AttestdAPIError:       Server error after all retries.
@@ -198,6 +212,7 @@ class Client:
             )
 
         include_cves = _want_cves(include)
+        items = [_normalize_check_args(product, version) for product, version in items]
         results: list[RiskResult | None] = [None] * len(items)
         miss_indices: list[int] = []
         miss_items: list[tuple[str, str]] = []
@@ -441,6 +456,7 @@ class AsyncClient:
             See Client.check().
         """
         include_cves = _want_cves(include)
+        product, version = _normalize_check_args(product, version)
         cached = self._cache.get(product, version, include_cves)
         if cached is not None:
             return cached
@@ -475,6 +491,7 @@ class AsyncClient:
             )
 
         include_cves = _want_cves(include)
+        items = [_normalize_check_args(product, version) for product, version in items]
         results: list[RiskResult | None] = [None] * len(items)
         miss_indices: list[int] = []
         miss_items: list[tuple[str, str]] = []
