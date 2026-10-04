@@ -9,6 +9,7 @@ import pytest
 
 import attestd
 from attestd._cache import ResultCache
+from attestd.errors import AttestdError
 from attestd.testing import NGINX_SAFE, NGINX_VULNERABLE, SequentialMockAsyncTransport
 
 from tests.conftest import make_client
@@ -137,6 +138,31 @@ def test_invalidate_cache_forces_refetch():
     assert second.risk_state == "none"
     assert client.stats().api_calls_made == 2
     assert client.stats().cache_hits == 0
+
+
+def test_invalidate_cache_trims_padded_product_and_version():
+    transport = attestd.testing.SequentialMockTransport(
+        [(200, NGINX_VULNERABLE), (200, NGINX_SAFE)]
+    )
+    client = attestd.Client(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="runtime",
+    )
+    client.check(" nginx ", " 1.20.0 ")
+    client.invalidate_cache(" nginx ", " 1.20.0 ")
+    second = client.check("nginx", "1.20.0")
+    assert transport.call_count == 2
+    assert second.risk_state == "none"
+
+
+def test_invalidate_cache_whitespace_only_raises_without_request():
+    client = make_client([])
+    with pytest.raises(AttestdError, match="product and version are required"):
+        client.invalidate_cache("   ", "1.20.0")
+    with pytest.raises(AttestdError, match="product and version are required"):
+        client.invalidate_cache("nginx", "  ")
 
 
 def test_invalidate_cache_drops_compact_and_detailed_entries():
@@ -373,4 +399,24 @@ async def test_async_does_not_coalesce_compact_with_detailed():
     assert len(detailed.cves) == 1
     assert detailed.cves[0].cve_id == "CVE-2021-23017"
     assert transport.call_count == 2
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_invalidate_cache_trims_padded_product_and_version():
+    transport = SequentialMockAsyncTransport(
+        [(200, NGINX_VULNERABLE), (200, NGINX_SAFE)]
+    )
+    client = attestd.AsyncClient(
+        api_key="atst_test",
+        transport=transport,
+        max_retries=0,
+        cache_policy="runtime",
+        batch_window_ms=0,
+    )
+    await client.check(" nginx ", " 1.20.0 ")
+    client.invalidate_cache(" nginx ", " 1.20.0 ")
+    second = await client.check("nginx", "1.20.0")
+    assert transport.call_count == 2
+    assert second.risk_state == "none"
     await client.aclose()
