@@ -29,6 +29,7 @@ import asyncio
 import os
 import time
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -80,6 +81,14 @@ def _normalize_check_args(product: str, version: str) -> tuple[str, str]:
     if not product or not version:
         raise AttestdError("product and version are required.")
     return product, version
+
+
+def _normalize_cve_id(cve_id: str) -> str:
+    """Strip CVE id. Reject empty values before they hit GET /v1/cve/."""
+    cve_id = cve_id.strip()
+    if not cve_id:
+        raise AttestdError("cve_id is required.")
+    return cve_id
 
 
 class Client:
@@ -247,9 +256,10 @@ class Client:
 
     def cve(self, cve_id: str) -> CveDetail:
         """Return details for a single CVE id. Raises AttestdAPIError on 404."""
-        path = f"{CVE_PATH_PREFIX}{cve_id.strip()}"
+        cve_id = _normalize_cve_id(cve_id)
+        path = f"{CVE_PATH_PREFIX}{quote(cve_id, safe='')}"
         response = self._get_with_retry(path)
-        return parse_cve_response(response, cve_id.strip())
+        return parse_cve_response(response, cve_id)
 
     def usage(self) -> UsageResult:
         """Return API key quota usage for the current billing period."""
@@ -530,9 +540,10 @@ class AsyncClient:
 
     async def cve(self, cve_id: str) -> CveDetail:
         """Async version of Client.cve()."""
-        path = f"{CVE_PATH_PREFIX}{cve_id.strip()}"
+        cve_id = _normalize_cve_id(cve_id)
+        path = f"{CVE_PATH_PREFIX}{quote(cve_id, safe='')}"
         response = await self._get_with_retry(path)
-        return parse_cve_response(response, cve_id.strip())
+        return parse_cve_response(response, cve_id)
 
     async def usage(self) -> UsageResult:
         """Async version of Client.usage()."""
