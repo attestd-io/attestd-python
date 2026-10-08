@@ -5,7 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-10-08
+
+`v0.7.1` was tagged on `main` but never published. Hatchling emitted
+Metadata-Version 2.5 and the pinned `pypa/gh-action-pypi-publish` rejected
+the wheel (`InvalidDistribution: '2.5' is not a valid metadata version`).
+Re-running that tag would reuse the broken workflow, so this release
+carries the same unpublished 0.7.1 client changes plus the publish-action
+fix. Tag `v0.7.1` is left in place. No breaking public API changes.
+
+### Changed
+
+- Pin `pypa/gh-action-pypi-publish` to v1.14.2 (Twine 7) so Publish accepts
+  hatchling Metadata-Version 2.5 wheels. Trusted publishing / OIDC is
+  unchanged.
+
 ## [0.7.1] - 2026-10-08
+
+Tagged as `v0.7.1` but never published to PyPI. See 0.7.2.
 
 Patch release of unpublished `main` commits since PyPI `0.7.0` (2026-07-29).
 No breaking public API changes.
@@ -28,4 +45,5 @@ No breaking public API changes.
 - Package metadata GitHub URLs now point at `attestd-io/attestd-python`. README documents shipped `RiskResult`, typosquat, cache, and retry behavior ([#2](https://github.com/attestd-io/attestd-python/pull/2)).
 - README restores the `last_updated` field row and documents that `invalidate_cache` drops both compact and detailed cache entries ([#4](https://github.com/attestd-io/attestd-python/pull/4)).
 
-[0.7.1]: https://github.com/attestd-io/attestd-python/compare/v0.7.0...HEAD
+[0.7.2]: https://github.com/attestd-io/attestd-python/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/attestd-io/attestd-python/compare/v0.7.0...v0.7.1
