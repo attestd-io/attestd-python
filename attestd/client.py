@@ -91,6 +91,14 @@ def _normalize_cve_id(cve_id: str) -> str:
     return cve_id
 
 
+def _timeout_api_error(timeout: float) -> AttestdAPIError:
+    """Surface a timeout as AttestdAPIError using the constructor seconds."""
+    return AttestdAPIError(
+        f"Request timed out after {timeout} seconds.",
+        status_code=0,
+    )
+
+
 class Client:
     """
     Synchronous Attestd API client.
@@ -127,6 +135,7 @@ class Client:
         resolved_key = _resolve_api_key(api_key)
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._timeout = timeout
         self._cache = ResultCache(cache_policy)
         self._http = httpx.Client(
             base_url=base_url,
@@ -317,10 +326,7 @@ class Client:
                     status_code=response.status_code,
                 )
             except httpx.TimeoutException as exc:
-                raise AttestdAPIError(
-                    f"Request timed out after {self._http.timeout} seconds.",
-                    status_code=0,
-                ) from exc
+                raise _timeout_api_error(self._timeout) from exc
             except _RETRYABLE_EXCEPTIONS as exc:
                 last_exc = AttestdAPIError(
                     f"Connection to Attestd API failed: {exc}",
@@ -348,10 +354,7 @@ class Client:
                     status_code=response.status_code,
                 )
             except httpx.TimeoutException as exc:
-                raise AttestdAPIError(
-                    f"Request timed out after {self._http.timeout} seconds.",
-                    status_code=0,
-                ) from exc
+                raise _timeout_api_error(self._timeout) from exc
             except _RETRYABLE_EXCEPTIONS as exc:
                 last_exc = AttestdAPIError(
                     f"Connection to Attestd API failed: {exc}",
@@ -376,10 +379,7 @@ class Client:
                     status_code=response.status_code,
                 )
             except httpx.TimeoutException as exc:
-                raise AttestdAPIError(
-                    f"Request timed out after {self._http.timeout} seconds.",
-                    status_code=0,
-                ) from exc
+                raise _timeout_api_error(self._timeout) from exc
             except _RETRYABLE_EXCEPTIONS as exc:
                 last_exc = AttestdAPIError(
                     f"Connection to Attestd API failed: {exc}",
@@ -425,6 +425,7 @@ class AsyncClient:
         resolved_key = _resolve_api_key(api_key)
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._timeout = timeout
         self._batch_window_ms = max(0, batch_window_ms)
         self._cache = ResultCache(cache_policy)
         self._http = httpx.AsyncClient(
@@ -704,10 +705,7 @@ class AsyncClient:
                     status_code=response.status_code,
                 )
             except httpx.TimeoutException as exc:
-                raise AttestdAPIError(
-                    f"Request timed out after {self._http.timeout} seconds.",
-                    status_code=0,
-                ) from exc
+                raise _timeout_api_error(self._timeout) from exc
             except _RETRYABLE_EXCEPTIONS as exc:
                 last_exc = AttestdAPIError(
                     f"Connection to Attestd API failed: {exc}",
@@ -737,10 +735,7 @@ class AsyncClient:
                     status_code=response.status_code,
                 )
             except httpx.TimeoutException as exc:
-                raise AttestdAPIError(
-                    f"Request timed out after {self._http.timeout} seconds.",
-                    status_code=0,
-                ) from exc
+                raise _timeout_api_error(self._timeout) from exc
             except _RETRYABLE_EXCEPTIONS as exc:
                 last_exc = AttestdAPIError(
                     f"Connection to Attestd API failed: {exc}",
@@ -765,10 +760,7 @@ class AsyncClient:
                     status_code=response.status_code,
                 )
             except httpx.TimeoutException as exc:
-                raise AttestdAPIError(
-                    f"Request timed out after {self._http.timeout} seconds.",
-                    status_code=0,
-                ) from exc
+                raise _timeout_api_error(self._timeout) from exc
             except _RETRYABLE_EXCEPTIONS as exc:
                 last_exc = AttestdAPIError(
                     f"Connection to Attestd API failed: {exc}",

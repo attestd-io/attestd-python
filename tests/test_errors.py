@@ -90,7 +90,30 @@ def test_timeout_does_not_retry():
     with pytest.raises(AttestdAPIError) as exc_info:
         client.check("nginx", "1.20.0")
     assert exc_info.value.status_code == 0
-    assert "timed out" in str(exc_info.value).lower()
+    assert str(exc_info.value) == "Request timed out after 10.0 seconds."
+    assert "Timeout(" not in str(exc_info.value)
+
+
+async def test_async_timeout_message_uses_seconds():
+    import httpx
+
+    from attestd import AsyncClient
+
+    class TimeoutTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):  # type: ignore[override]
+            raise httpx.TimeoutException("timed out")
+
+    async with AsyncClient(
+        api_key="atst_test",
+        transport=TimeoutTransport(),
+        max_retries=3,
+        batch_window_ms=0,
+    ) as client:
+        with pytest.raises(AttestdAPIError) as exc_info:
+            await client.check("nginx", "1.20.0")
+    assert exc_info.value.status_code == 0
+    assert str(exc_info.value) == "Request timed out after 10.0 seconds."
+    assert "Timeout(" not in str(exc_info.value)
 
 
 def test_non_dict_json_raises_api_error():
