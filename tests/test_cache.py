@@ -248,7 +248,7 @@ def test_batch_check_uses_cache():
 def test_exports():
     assert hasattr(attestd, "SessionStats")
     assert hasattr(attestd, "CachePolicy")
-    assert attestd.__version__ == "0.7.1"
+    assert attestd.__version__ == "0.7.2"
 
 
 def test_compact_and_detailed_cache_entries_do_not_mix():
